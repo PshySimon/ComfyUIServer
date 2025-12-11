@@ -660,6 +660,13 @@ class TaskManager:
                                 pass
                 self.queue.insert(insert_pos, task_id)
 
+            # 统计所有 PROCESSING 状态的任务数量（通常只有 1 个）
+            processing_count = 0
+            for q_task_id in self.queue:
+                q_task = self.tasks.get(q_task_id)
+                if q_task and q_task.get("status") == TaskStatus.PROCESSING:
+                    processing_count += 1
+
             # 构建有效队列：只包含 QUEUED 状态的任务（排除 PROCESSING、COMPLETED、FAILED）
             # 有效队列保持按创建时间排序
             valid_queue = []
@@ -668,21 +675,26 @@ class TaskManager:
                 if q_task and q_task.get("status") == TaskStatus.QUEUED:
                     valid_queue.append(q_task_id)
 
-            # 计算排队位置（从1开始）
-            if task_id in valid_queue:
-                queue_position = valid_queue.index(task_id) + 1
-            else:
-                # 如果任务不在有效队列中，可能是状态不一致
-                # 如果任务状态是 QUEUED，应该添加到有效队列末尾
-                if task["status"] == TaskStatus.QUEUED:
-                    valid_queue.append(task_id)
-                    queue_position = len(valid_queue)
+            # 计算排队位置
+            # PROCESSING 任务的位置是 0（正在处理）
+            # QUEUED 任务的位置 = PROCESSING 任务数量 + 在 QUEUED 队列中的位置（从 1 开始）
+            if task["status"] == TaskStatus.QUEUED:
+                if task_id in valid_queue:
+                    # 在 QUEUED 队列中的位置（从 1 开始）
+                    queued_index = valid_queue.index(task_id) + 1
+                    # 总位置 = PROCESSING 数量 + QUEUED 中的位置
+                    queue_position = processing_count + queued_index
                 else:
-                    # 如果任务状态不是 QUEUED，将其视为 QUEUED 并添加到末尾
+                    # 如果任务不在有效队列中，可能是状态不一致，添加到末尾
                     valid_queue.append(task_id)
-                    queue_position = len(valid_queue)
-                    # 更新状态为 QUEUED
-                    task["status"] = TaskStatus.QUEUED
+                    queued_index = len(valid_queue)
+                    queue_position = processing_count + queued_index
+            else:
+                # 如果任务状态不是 QUEUED，将其视为 QUEUED 并添加到末尾
+                valid_queue.append(task_id)
+                queued_index = len(valid_queue)
+                queue_position = processing_count + queued_index
+                task["status"] = TaskStatus.QUEUED
 
             # 更新排队位置和状态
             self.update_task(
@@ -691,6 +703,20 @@ class TaskManager:
                 queue_position=queue_position,
             )
             return TaskStatus.QUEUED
+
+    def get_queue_total(self) -> int:
+        """获取队列总人数（包括正在处理和等待的任务）"""
+        with self.lock:
+            # 清理队列：移除已完成和失败的任务
+            self.queue = [
+                q_task_id
+                for q_task_id in self.queue
+                if q_task_id in self.tasks
+                and self.tasks[q_task_id].get("status")
+                not in (TaskStatus.COMPLETED, TaskStatus.FAILED)
+            ]
+            # 返回队列总人数（包括 PROCESSING 和 QUEUED 状态的任务）
+            return len(self.queue)
 
 
 # 全局任务管理器
@@ -815,6 +841,7 @@ class TaskStatusResponse(BaseModel):
     task_id: str
     status: str
     queue_position: Optional[int] = None
+    queue_total: Optional[int] = None  # 队列总人数（包括正在处理和等待的任务）
     created_at: str
     result: Optional[Dict] = None
     error: Optional[Any] = None
@@ -1609,6 +1636,10 @@ async def get_task_status(task_id: str):
 
     if task.get("queue_position") is not None:
         response_data["queue_position"] = task["queue_position"]
+
+    # 获取队列总人数（包括正在处理和等待的任务）
+    queue_total = task_manager.get_queue_total()
+    response_data["queue_total"] = queue_total
 
     if status == TaskStatus.COMPLETED:
         response_data["result"] = task.get("result")

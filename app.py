@@ -137,7 +137,7 @@ def add_extra_model_paths() -> None:
         )
 
 
-def import_custom_nodes() -> None:
+async def import_custom_nodes() -> None:
     """Find all custom nodes in the custom_nodes folder and add those node objects to NODE_CLASS_MAPPINGS"""
     global has_manager, server_instance, prompt_queue
 
@@ -174,16 +174,11 @@ def import_custom_nodes() -> None:
         import server
         from nodes import init_extra_nodes
 
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        async def inner():
-            global server_instance, prompt_queue
-            server_instance = server.PromptServer(loop)
-            prompt_queue = execution.PromptQueue(server_instance)
-            await init_extra_nodes(init_custom_nodes=True)
-
-        loop.run_until_complete(inner())
+        # 使用当前事件循环，而不是创建新的
+        loop = asyncio.get_event_loop()
+        server_instance = server.PromptServer(loop)
+        prompt_queue = execution.PromptQueue(server_instance)
+        await init_extra_nodes(init_custom_nodes=True)
     finally:
         # 恢复原始 sys.argv
         sys.argv = original_argv
@@ -192,7 +187,7 @@ def import_custom_nodes() -> None:
             sys.modules["app"] = saved_app_module
 
 
-def initialize_comfyui():
+async def initialize_comfyui():
     """初始化 ComfyUI 环境"""
     global _custom_nodes_imported, _custom_path_added, NODE_CLASS_MAPPINGS
 
@@ -202,7 +197,7 @@ def initialize_comfyui():
         _custom_path_added = True
 
     if not _custom_nodes_imported:
-        import_custom_nodes()
+        await import_custom_nodes()
         _custom_nodes_imported = True
 
     if NODE_CLASS_MAPPINGS is None:
@@ -607,7 +602,7 @@ class FirstLastToVideoRequest(BaseModel):
 async def startup_event():
     """启动时初始化"""
     load_config()
-    initialize_comfyui()
+    await initialize_comfyui()
 
 
 @app.get("/")

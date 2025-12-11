@@ -1,9 +1,24 @@
 # ComfyUI Server Configuration
 comfyui:
-  directory: null  # ComfyUI 目录路径，null 表示自动查找
-  extra_model_paths: null  # extra_model_paths.yaml 路径，null 表示自动查找
-  output_directory: null  # ComfyUI 输出目录，null 表示使用默认目录
-  base_url: "http://localhost:8000"  # 视频文件的基础 URL，用于生成访问链接
+  # ComfyUI 目录路径（必填）
+  # 例如: /Users/yourname/ComfyUI
+  directory: null
+  
+  # extra_model_paths.yaml 配置文件路径（可选）
+  # 用于指定额外的模型搜索路径，支持：
+  # 1. 共享模型资源（与其他工具共享模型，避免重复下载）
+  # 2. 自定义模型存储位置（checkpoints、VAE、LoRA、ControlNet 等）
+  # 3. 多目录模型加载
+  # 如果不需要可以不配置，留 null
+  # 例如: /Users/yourname/ComfyUI/extra_model_paths.yaml
+  extra_model_paths: null
+  
+  # ComfyUI 输出目录（可选）
+  # null 表示使用 ComfyUI 默认输出目录
+  output_directory: null
+  
+  # 视频文件的基础 URL，用于生成访问链接
+  base_url: "http://localhost:8000"
 
 # 默认模型配置
 models:

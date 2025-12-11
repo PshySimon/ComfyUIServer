@@ -53,11 +53,7 @@ def get_value_at_index(obj: Union[Sequence, Mapping], index: int) -> Any:
 def find_path(name: str, path: str = None) -> str:
     """Recursively looks at parent folders starting from the given path until it finds the given name."""
     if path is None:
-        comfyui_dir = config.get("comfyui", {}).get("directory")
-        if comfyui_dir:
-            path = comfyui_dir
-        else:
-            path = os.getcwd()
+        path = os.getcwd()
 
     if name in os.listdir(path):
         path_name = os.path.join(path, name)
@@ -71,10 +67,30 @@ def find_path(name: str, path: str = None) -> str:
     return find_path(name, parent_directory)
 
 
+def find_comfyui_directory() -> Optional[str]:
+    """仅使用显式配置或环境变量定位 ComfyUI 根目录（包含 main.py）"""
+    comfyui_dir = config.get("comfyui", {}).get("directory")
+    if comfyui_dir and os.path.isdir(comfyui_dir):
+        if os.path.exists(os.path.join(comfyui_dir, "main.py")):
+            print(f"使用配置文件中的 ComfyUI 路径: {comfyui_dir}")
+            return comfyui_dir
+
+    comfyui_env = os.environ.get("COMFYUI_PATH") or os.environ.get("COMFYUI_DIR")
+    if comfyui_env and os.path.isdir(comfyui_env):
+        if os.path.exists(os.path.join(comfyui_env, "main.py")):
+            print(f"使用环境变量中的 ComfyUI 路径: {comfyui_env}")
+            return comfyui_env
+
+    raise FileNotFoundError(
+        "未找到 ComfyUI 目录。请在 config.yaml 配置 comfyui.directory，"
+        "或设置环境变量 COMFYUI_PATH/COMFYUI_DIR 指向包含 main.py 的 ComfyUI 根目录。"
+    )
+
+
 def add_comfyui_directory_to_sys_path() -> None:
     """Add 'ComfyUI' to the sys.path"""
     global has_manager
-    comfyui_path = find_path("ComfyUI")
+    comfyui_path = find_comfyui_directory()
     if comfyui_path is not None and os.path.isdir(comfyui_path):
         sys.path.append(comfyui_path)
 
@@ -95,7 +111,17 @@ def add_comfyui_directory_to_sys_path() -> None:
 
 
 def add_extra_model_paths() -> None:
-    """Parse the optional extra_model_paths.yaml file and add the parsed paths to the sys.path."""
+    """
+    加载额外的模型路径配置
+
+    extra_model_paths.yaml 是 ComfyUI 的配置文件，用于指定额外的模型搜索路径。
+    主要用途：
+    1. 共享模型资源：在不同工具（如 Automatic1111 和 ComfyUI）之间共享模型，避免重复下载
+    2. 自定义模型路径：指定模型文件（checkpoints、VAE、LoRA、ControlNet 等）的存储位置
+    3. 多目录支持：从多个目录加载模型文件
+
+    如果不需要使用额外模型路径，可以不配置此项。
+    """
     from comfy.options import enable_args_parsing
 
     enable_args_parsing()
@@ -103,14 +129,16 @@ def add_extra_model_paths() -> None:
 
     extra_model_paths_config = config.get("comfyui", {}).get("extra_model_paths")
     if extra_model_paths_config:
-        extra_model_paths = extra_model_paths_config
+        if os.path.exists(extra_model_paths_config):
+            load_extra_path_config(extra_model_paths_config)
+            print(f"已加载额外模型路径配置: {extra_model_paths_config}")
+        else:
+            print(f"警告: extra_model_paths 配置文件不存在: {extra_model_paths_config}")
     else:
-        extra_model_paths = find_path("extra_model_paths.yaml")
-
-    if extra_model_paths is not None:
-        load_extra_path_config(extra_model_paths)
-    else:
-        print("Could not find the extra_model_paths config file.")
+        print(
+            "extra_model_paths 未配置，跳过额外模型路径加载。"
+            "如需使用请在 config.yaml 配置 comfyui.extra_model_paths 路径。"
+        )
 
 
 def import_custom_nodes() -> None:

@@ -897,9 +897,6 @@ def execute_image_to_video_workflow(task_id: str, request: ImageToVideoRequest):
 
         # 视频输出参数
         frame_rate = get_param("frame_rate", "video.frame_rate") or 16
-        frame_rate_interpolated = (
-            get_param("frame_rate_interpolated", "video.frame_rate_interpolated") or 32
-        )
         loop_count = get_param("loop_count", "video.loop_count") or 0
         format_type = get_param("format", "video.format") or "video/h264-mp4"
         pingpong = get_param("pingpong", "video.pingpong") or False
@@ -908,16 +905,6 @@ def execute_image_to_video_workflow(task_id: str, request: ImageToVideoRequest):
             if get_param("save_output") is not None
             else True
         )
-        save_output_interpolated = (
-            get_param("save_output_interpolated", "other.save_output")
-            if get_param("save_output_interpolated") is not None
-            else True
-        )
-
-        # RIFE 参数
-        enable_rife = request.enable_rife if request.enable_rife is not None else True
-        rife_ckpt = get_param("rife_ckpt_name", "rife.ckpt_name") or "rife47.pth"
-        rife_multiplier = get_param("rife_multiplier", "rife.multiplier") or 2
 
         # 图像处理参数
         aspect_ratio = get_config_value("image.aspect_ratio", "original")
@@ -1148,61 +1135,13 @@ def execute_image_to_video_workflow(task_id: str, request: ImageToVideoRequest):
                 },
             }
 
-            # RIFE 插帧
-            if enable_rife:
-                rife_vfi = nodes["RIFE VFI"]()
-                rife_result = rife_vfi.vfi(
-                    ckpt_name=rife_ckpt,
-                    clear_cache_after_n_frames=get_config_value(
-                        "rife.clear_cache_after_n_frames", 8
-                    ),
-                    multiplier=rife_multiplier,
-                    fast_mode=get_config_value("rife.fast_mode", True),
-                    ensemble=get_config_value("rife.ensemble", True),
-                    scale_factor=get_config_value("rife.scale_factor", 1),
-                    frames=get_value_at_index(clean_result, 0),
-                )
-
-                filename_prefix_interpolated = (
-                    request.filename_prefix_interpolated
-                    or "Video/2025-12-11/wan22_i2v_interpolated_"
-                )
-                video_interpolated = vhs_videocombine.combine_video(
-                    frame_rate=frame_rate_interpolated,
-                    loop_count=loop_count,
-                    filename_prefix=filename_prefix_interpolated,
-                    format=format_type,
-                    pix_fmt="yuv420p",
-                    crf=15,
-                    save_metadata=True,
-                    trim_to_audio=False,
-                    pingpong=pingpong,
-                    save_output=save_output_interpolated,
-                    images=get_value_at_index(rife_result, 0),
-                )
-
-                result["video_interpolated"] = {
-                    "frame_rate": frame_rate_interpolated,
-                    "filename_prefix": filename_prefix_interpolated,
-                }
-
         # 提取视频文件路径
-        video_interpolated_result = (
-            video_interpolated
-            if enable_rife and "video_interpolated" in result
-            else None
-        )
-        filename_prefix_interpolated = (
-            request.filename_prefix_interpolated
-            if enable_rife and "video_interpolated" in result
-            else None
-        )
         video_urls = extract_video_urls(
             video_result,
-            video_interpolated_result,
-            enable_rife,
+            None,
+            False,
             filename_prefix=filename_prefix,
-            filename_prefix_interpolated=filename_prefix_interpolated,
+            filename_prefix_interpolated=None,
         )
 
         task_manager.update_task(
@@ -1324,9 +1263,6 @@ def execute_first_last_to_video_workflow(
 
         # 视频输出参数
         frame_rate = get_param("frame_rate", "video.frame_rate") or 16
-        frame_rate_interpolated = (
-            get_param("frame_rate_interpolated", "video.frame_rate_interpolated") or 32
-        )
         loop_count = get_param("loop_count", "video.loop_count") or 0
         format_type = get_param("format", "video.format") or "video/h264-mp4"
         pingpong = get_param("pingpong", "video.pingpong") or False
@@ -1335,16 +1271,6 @@ def execute_first_last_to_video_workflow(
             if get_param("save_output") is not None
             else True
         )
-        save_output_interpolated = (
-            get_param("save_output_interpolated", "other.save_output")
-            if get_param("save_output_interpolated") is not None
-            else True
-        )
-
-        # RIFE 参数
-        enable_rife = request.enable_rife if request.enable_rife is not None else True
-        rife_ckpt = get_param("rife_ckpt_name", "rife.ckpt_name") or "rife47.pth"
-        rife_multiplier = get_param("rife_multiplier", "rife.multiplier") or 2
 
         # 图像处理参数
         aspect_ratio = get_config_value("image.aspect_ratio", "original")
@@ -1612,61 +1538,13 @@ def execute_first_last_to_video_workflow(
                 },
             }
 
-            # RIFE 插帧
-            if enable_rife:
-                rife_vfi = nodes["RIFE VFI"]()
-                rife_result = rife_vfi.vfi(
-                    ckpt_name=rife_ckpt,
-                    clear_cache_after_n_frames=get_config_value(
-                        "rife.clear_cache_after_n_frames", 8
-                    ),
-                    multiplier=rife_multiplier,
-                    fast_mode=get_config_value("rife.fast_mode", True),
-                    ensemble=get_config_value("rife.ensemble", True),
-                    scale_factor=get_config_value("rife.scale_factor", 1),
-                    frames=get_value_at_index(clean_result, 0),
-                )
-
-                filename_prefix_interpolated = (
-                    request.filename_prefix_interpolated
-                    or "Video/2025-12-11/wan22_fl_interpolated_"
-                )
-                video_interpolated = vhs_videocombine.combine_video(
-                    frame_rate=frame_rate_interpolated,
-                    loop_count=loop_count,
-                    filename_prefix=filename_prefix_interpolated,
-                    format=format_type,
-                    pix_fmt="yuv420p",
-                    crf=15,
-                    save_metadata=True,
-                    trim_to_audio=False,
-                    pingpong=pingpong,
-                    save_output=save_output_interpolated,
-                    images=get_value_at_index(rife_result, 0),
-                )
-
-                result["video_interpolated"] = {
-                    "frame_rate": frame_rate_interpolated,
-                    "filename_prefix": filename_prefix_interpolated,
-                }
-
         # 提取视频文件路径
-        video_interpolated_result = (
-            video_interpolated
-            if enable_rife and "video_interpolated" in result
-            else None
-        )
-        filename_prefix_interpolated = (
-            request.filename_prefix_interpolated
-            if enable_rife and "video_interpolated" in result
-            else None
-        )
         video_urls = extract_video_urls(
             video_result,
-            video_interpolated_result,
-            enable_rife,
+            None,
+            False,
             filename_prefix=filename_prefix,
-            filename_prefix_interpolated=filename_prefix_interpolated,
+            filename_prefix_interpolated=None,
         )
 
         task_manager.update_task(

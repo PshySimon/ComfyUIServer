@@ -146,13 +146,27 @@ def add_extra_model_paths() -> None:
 
 
 def resolve_output_directory(strict: bool = True) -> Optional[str]:
-    """仅使用用户明确配置的 comfyui.output_directory"""
+    """获取输出目录：
+    1) 优先 config.comfyui.output_directory
+    2) 其次环境变量 COMFYUI_OUTPUT_DIR
+    3) 若未提供，且 comfyui.directory 存在，则退化为 {directory}/output
+    """
     comfy_cfg = config.get("comfyui", {}) if config else {}
-    output_dir = comfy_cfg.get("output_directory")
+    output_dir = comfy_cfg.get("output_directory") or os.environ.get(
+        "COMFYUI_OUTPUT_DIR"
+    )
+
+    # 默认退化到 comfyui.directory/output（仅当 comfyui.directory 有配置且目录存在）
+    if not output_dir:
+        comfy_root = comfy_cfg.get("directory")
+        if comfy_root:
+            output_dir = os.path.join(comfy_root, "output")
 
     if not output_dir:
         if strict:
-            print("警告: 未配置 comfyui.output_directory，跳过输出清理任务。")
+            print(
+                "警告: 未配置 comfyui.output_directory/COMFYUI_OUTPUT_DIR，也未提供 comfyui.directory，跳过输出清理任务。"
+            )
         return None
 
     output_dir = os.path.abspath(output_dir)

@@ -50,47 +50,32 @@ def get_value_at_index(obj: Union[Sequence, Mapping], index: int) -> Any:
         return obj["result"][index]
 
 
-def find_path(name: str, path: str = None) -> str:
-    """Recursively looks at parent folders starting from the given path until it finds the given name."""
-    if path is None:
-        path = os.getcwd()
-
-    if name in os.listdir(path):
-        path_name = os.path.join(path, name)
-        print(f"{name} found: {path_name}")
-        return path_name
-
-    parent_directory = os.path.dirname(path)
-    if parent_directory == path:
-        return None
-
-    return find_path(name, parent_directory)
-
-
-def find_comfyui_directory() -> Optional[str]:
-    """仅使用显式配置或环境变量定位 ComfyUI 根目录（包含 main.py）"""
-    comfyui_dir = config.get("comfyui", {}).get("directory")
-    if comfyui_dir and os.path.isdir(comfyui_dir):
-        if os.path.exists(os.path.join(comfyui_dir, "main.py")):
-            print(f"使用配置文件中的 ComfyUI 路径: {comfyui_dir}")
-            return comfyui_dir
-
-    comfyui_env = os.environ.get("COMFYUI_PATH") or os.environ.get("COMFYUI_DIR")
-    if comfyui_env and os.path.isdir(comfyui_env):
-        if os.path.exists(os.path.join(comfyui_env, "main.py")):
-            print(f"使用环境变量中的 ComfyUI 路径: {comfyui_env}")
-            return comfyui_env
-
-    raise FileNotFoundError(
-        "未找到 ComfyUI 目录。请在 config.yaml 配置 comfyui.directory，"
-        "或设置环境变量 COMFYUI_PATH/COMFYUI_DIR 指向包含 main.py 的 ComfyUI 根目录。"
-    )
-
-
 def add_comfyui_directory_to_sys_path() -> None:
     """Add 'ComfyUI' to the sys.path"""
     global has_manager
-    comfyui_path = find_comfyui_directory()
+
+    # 从配置文件或环境变量获取 ComfyUI 路径
+    comfyui_path = config.get("comfyui", {}).get("directory")
+    if not comfyui_path:
+        comfyui_path = os.environ.get("COMFYUI_PATH") or os.environ.get("COMFYUI_DIR")
+
+    if not comfyui_path:
+        raise FileNotFoundError(
+            "未找到 ComfyUI 目录配置。请在 config.yaml 中配置 comfyui.directory，"
+            "或设置环境变量 COMFYUI_PATH/COMFYUI_DIR 指向包含 main.py 的 ComfyUI 根目录。"
+        )
+
+    if not os.path.isdir(comfyui_path):
+        raise FileNotFoundError(f"ComfyUI 目录不存在: {comfyui_path}")
+
+    main_py_path = os.path.join(comfyui_path, "main.py")
+    if not os.path.exists(main_py_path):
+        raise FileNotFoundError(
+            f"在 {comfyui_path} 中未找到 main.py，请确认这是 ComfyUI 的根目录。"
+        )
+
+    print(f"使用 ComfyUI 路径: {comfyui_path}")
+
     if comfyui_path is not None and os.path.isdir(comfyui_path):
         sys.path.append(comfyui_path)
 

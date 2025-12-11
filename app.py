@@ -77,7 +77,9 @@ def add_comfyui_directory_to_sys_path() -> None:
     print(f"使用 ComfyUI 路径: {comfyui_path}")
 
     if comfyui_path is not None and os.path.isdir(comfyui_path):
-        sys.path.append(comfyui_path)
+        # 确保 ComfyUI 路径优先，避免与当前项目的 app.py 名称冲突
+        if comfyui_path not in sys.path:
+            sys.path.insert(0, comfyui_path)
 
         manager_path = os.path.join(
             comfyui_path, "custom_nodes", "ComfyUI-Manager", "glob"
@@ -141,6 +143,8 @@ def import_custom_nodes() -> None:
 
     # 保存原始 sys.argv，避免 ComfyUI 的 argparse 解析我们的 uvicorn 参数
     original_argv = sys.argv.copy()
+    # 避免 ComfyUI 内部导入 app.* 时命中当前项目的 app.py
+    saved_app_module = sys.modules.pop("app", None)
     try:
         # 设置 sys.argv 为只包含脚本名称，避免 ComfyUI 解析我们的启动参数
         sys.argv = [sys.argv[0]]
@@ -183,6 +187,9 @@ def import_custom_nodes() -> None:
     finally:
         # 恢复原始 sys.argv
         sys.argv = original_argv
+        # 还原当前项目的 app 模块，避免后续导入问题
+        if saved_app_module is not None:
+            sys.modules["app"] = saved_app_module
 
 
 def initialize_comfyui():

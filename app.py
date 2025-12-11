@@ -107,10 +107,19 @@ def add_extra_model_paths() -> None:
 
     如果不需要使用额外模型路径，可以不配置此项。
     """
-    from comfy.options import enable_args_parsing
+    # 保存原始 sys.argv，避免 ComfyUI 的 argparse 解析我们的 uvicorn 参数
+    original_argv = sys.argv.copy()
+    try:
+        # 设置 sys.argv 为只包含脚本名称，避免 ComfyUI 解析我们的启动参数
+        sys.argv = [sys.argv[0]]
 
-    enable_args_parsing()
-    from utils.extra_config import load_extra_path_config
+        from comfy.options import enable_args_parsing
+
+        enable_args_parsing()
+        from utils.extra_config import load_extra_path_config
+    finally:
+        # 恢复原始 sys.argv
+        sys.argv = original_argv
 
     extra_model_paths_config = config.get("comfyui", {}).get("extra_model_paths")
     if extra_model_paths_config:
@@ -129,41 +138,51 @@ def add_extra_model_paths() -> None:
 def import_custom_nodes() -> None:
     """Find all custom nodes in the custom_nodes folder and add those node objects to NODE_CLASS_MAPPINGS"""
     global has_manager, server_instance, prompt_queue
-    if has_manager:
-        try:
-            import manager_core as manager
-        except ImportError:
-            print("Could not import manager_core, proceeding without it.")
-            return
-        else:
-            if hasattr(manager, "get_config"):
-                print("Patching manager_core.get_config to enforce offline mode.")
-                try:
-                    get_config = manager.get_config
 
-                    def _get_config(*args, **kwargs):
-                        config = get_config(*args, **kwargs)
-                        config["network_mode"] = "offline"
-                        return config
+    # 保存原始 sys.argv，避免 ComfyUI 的 argparse 解析我们的 uvicorn 参数
+    original_argv = sys.argv.copy()
+    try:
+        # 设置 sys.argv 为只包含脚本名称，避免 ComfyUI 解析我们的启动参数
+        sys.argv = [sys.argv[0]]
 
-                    manager.get_config = _get_config
-                except Exception as e:
-                    print("Failed to patch manager_core.get_config:", e)
+        if has_manager:
+            try:
+                import manager_core as manager
+            except ImportError:
+                print("Could not import manager_core, proceeding without it.")
+                return
+            else:
+                if hasattr(manager, "get_config"):
+                    print("Patching manager_core.get_config to enforce offline mode.")
+                    try:
+                        get_config = manager.get_config
 
-    import execution
-    import server
-    from nodes import init_extra_nodes
+                        def _get_config(*args, **kwargs):
+                            config = get_config(*args, **kwargs)
+                            config["network_mode"] = "offline"
+                            return config
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+                        manager.get_config = _get_config
+                    except Exception as e:
+                        print("Failed to patch manager_core.get_config:", e)
 
-    async def inner():
-        global server_instance, prompt_queue
-        server_instance = server.PromptServer(loop)
-        prompt_queue = execution.PromptQueue(server_instance)
-        await init_extra_nodes(init_custom_nodes=True)
+        import execution
+        import server
+        from nodes import init_extra_nodes
 
-    loop.run_until_complete(inner())
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        async def inner():
+            global server_instance, prompt_queue
+            server_instance = server.PromptServer(loop)
+            prompt_queue = execution.PromptQueue(server_instance)
+            await init_extra_nodes(init_custom_nodes=True)
+
+        loop.run_until_complete(inner())
+    finally:
+        # 恢复原始 sys.argv
+        sys.argv = original_argv
 
 
 def initialize_comfyui():
@@ -180,9 +199,17 @@ def initialize_comfyui():
         _custom_nodes_imported = True
 
     if NODE_CLASS_MAPPINGS is None:
-        from nodes import NODE_CLASS_MAPPINGS as mappings
+        # 保存原始 sys.argv，避免 ComfyUI 的 argparse 解析我们的 uvicorn 参数
+        original_argv = sys.argv.copy()
+        try:
+            # 设置 sys.argv 为只包含脚本名称，避免 ComfyUI 解析我们的启动参数
+            sys.argv = [sys.argv[0]]
+            from nodes import NODE_CLASS_MAPPINGS as mappings
 
-        NODE_CLASS_MAPPINGS = mappings
+            NODE_CLASS_MAPPINGS = mappings
+        finally:
+            # 恢复原始 sys.argv
+            sys.argv = original_argv
 
     return NODE_CLASS_MAPPINGS
 

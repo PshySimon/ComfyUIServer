@@ -705,7 +705,25 @@ class TaskManager:
             return TaskStatus.QUEUED
 
     def get_queue_total(self) -> int:
-        """获取队列总人数（包括正在处理和等待的任务）"""
+        """获取队列总人数（包括正在处理和等待的任务）
+        优先从 ComfyUI 的 prompt_queue 获取真实队列信息，如果没有则使用自己维护的队列
+        """
+        # 优先从 ComfyUI 的 prompt_queue 获取真实队列信息
+        global prompt_queue
+        if prompt_queue is not None:
+            try:
+                # 获取 ComfyUI 的真实队列信息
+                # get_current_queue_volatile 返回 (running, queued)
+                # running: 正在执行的任务列表
+                # queued: 等待执行的任务列表
+                running, queued = prompt_queue.get_current_queue_volatile()
+                # 队列总人数 = 正在执行的任务数 + 等待执行的任务数
+                return len(running) + len(queued)
+            except Exception:
+                # 如果获取失败，回退到使用自己维护的队列
+                pass
+
+        # 回退：使用自己维护的队列
         with self.lock:
             # 清理队列：移除已完成和失败的任务
             self.queue = [

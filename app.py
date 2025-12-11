@@ -230,10 +230,15 @@ def get_config_value(key_path: str, default: Any = None) -> Any:
     return value if value is not None else default
 
 
-def extract_video_urls(video_result, video_interpolated=None, enable_rife=False):
-    """从视频结果中提取视频 URL 列表"""
+def extract_video_urls(
+    video_result,
+    video_interpolated=None,
+    enable_rife=False,
+    filename_prefix=None,
+    filename_prefix_interpolated=None,
+):
+    """从视频结果中提取视频 URL 列表（返回相对路径，可通过 /output/{path} 下载）"""
     video_urls = []
-    base_url = get_config_value("comfyui.base_url", "http://localhost:8000")
 
     # 获取输出目录
     try:
@@ -243,7 +248,12 @@ def extract_video_urls(video_result, video_interpolated=None, enable_rife=False)
     except:
         output_dir = None
 
-    if "ui" in video_result and "images" in video_result["ui"]:
+    # 方法1: 从 video_result 的 ui 字段提取（如果存在）
+    if (
+        isinstance(video_result, dict)
+        and "ui" in video_result
+        and "images" in video_result["ui"]
+    ):
         for img_info in video_result["ui"]["images"]:
             filename = img_info.get("filename")
             subfolder = img_info.get("subfolder", "")
@@ -257,15 +267,53 @@ def extract_video_urls(video_result, video_interpolated=None, enable_rife=False)
                 {
                     "filename": filename,
                     "subfolder": subfolder,
-                    "path": file_path,
+                    "path": file_path.replace("\\", "/"),  # 统一使用正斜杠
                     "full_path": full_path,
-                    "url": f"{base_url}/output/{file_path}" if base_url else None,
-                    "type": img_info.get("type"),
+                    "url": f"/output/{file_path.replace(chr(92), '/')}",  # 相对路径，用于下载
+                    "type": img_info.get("type", "output"),
                 }
             )
 
+    # 方法2: 根据 filename_prefix 从输出目录查找文件
+    if not video_urls and filename_prefix and output_dir:
+        import glob
+
+        # 查找匹配的视频文件（支持多种格式）
+        video_extensions = ["*.mp4", "*.webm", "*.mkv", "*.avi"]
+        # filename_prefix 可能包含子目录，如 "2025-12-11/wan22_i2v_"
+        prefix_path = os.path.join(output_dir, filename_prefix)
+
+        for ext in video_extensions:
+            pattern = prefix_path + ext
+            matches = glob.glob(pattern)
+            if matches:
+                # 按修改时间排序，取最新的文件
+                matches.sort(key=os.path.getmtime, reverse=True)
+                for match in matches:
+                    rel_path = os.path.relpath(match, output_dir)
+                    filename = os.path.basename(match)
+                    subfolder = os.path.dirname(rel_path)
+
+                    video_urls.append(
+                        {
+                            "filename": filename,
+                            "subfolder": subfolder if subfolder != "." else "",
+                            "path": rel_path.replace("\\", "/"),  # 统一使用正斜杠
+                            "full_path": match,
+                            "url": f"/output/{rel_path.replace(chr(92), '/')}",  # 相对路径，用于下载
+                            "type": "output",
+                        }
+                    )
+                break  # 找到匹配的文件后退出
+
+    # 处理插帧后的视频
     if enable_rife and video_interpolated:
-        if "ui" in video_interpolated and "images" in video_interpolated["ui"]:
+        # 方法1: 从 video_interpolated 的 ui 字段提取
+        if (
+            isinstance(video_interpolated, dict)
+            and "ui" in video_interpolated
+            and "images" in video_interpolated["ui"]
+        ):
             for img_info in video_interpolated["ui"]["images"]:
                 filename = img_info.get("filename")
                 subfolder = img_info.get("subfolder", "")
@@ -279,12 +327,42 @@ def extract_video_urls(video_result, video_interpolated=None, enable_rife=False)
                     {
                         "filename": filename,
                         "subfolder": subfolder,
-                        "path": file_path,
+                        "path": file_path.replace("\\", "/"),  # 统一使用正斜杠
                         "full_path": full_path,
-                        "url": f"{base_url}/output/{file_path}" if base_url else None,
-                        "type": img_info.get("type"),
+                        "url": f"/output/{file_path.replace(chr(92), '/')}",  # 相对路径，用于下载
+                        "type": img_info.get("type", "output"),
                     }
                 )
+
+        # 方法2: 根据 filename_prefix_interpolated 从输出目录查找文件
+        if filename_prefix_interpolated and output_dir:
+            import glob
+
+            video_extensions = ["*.mp4", "*.webm", "*.mkv", "*.avi"]
+            prefix_path = os.path.join(output_dir, filename_prefix_interpolated)
+
+            for ext in video_extensions:
+                pattern = prefix_path + ext
+                matches = glob.glob(pattern)
+                if matches:
+                    # 按修改时间排序，取最新的文件
+                    matches.sort(key=os.path.getmtime, reverse=True)
+                    for match in matches:
+                        rel_path = os.path.relpath(match, output_dir)
+                        filename = os.path.basename(match)
+                        subfolder = os.path.dirname(rel_path)
+
+                        video_urls.append(
+                            {
+                                "filename": filename,
+                                "subfolder": subfolder if subfolder != "." else "",
+                                "path": rel_path.replace("\\", "/"),  # 统一使用正斜杠
+                                "full_path": match,
+                                "url": f"/output/{rel_path.replace(chr(92), '/')}",  # 相对路径，用于下载
+                                "type": "output",
+                            }
+                        )
+                    break  # 找到匹配的文件后退出
 
     return video_urls
 
@@ -1005,8 +1083,17 @@ def execute_image_to_video_workflow(task_id: str, request: ImageToVideoRequest):
             if enable_rife and "video_interpolated" in result
             else None
         )
+        filename_prefix_interpolated = (
+            request.filename_prefix_interpolated
+            if enable_rife and "video_interpolated" in result
+            else None
+        )
         video_urls = extract_video_urls(
-            video_result, video_interpolated_result, enable_rife
+            video_result,
+            video_interpolated_result,
+            enable_rife,
+            filename_prefix=filename_prefix,
+            filename_prefix_interpolated=filename_prefix_interpolated,
         )
 
         task_manager.update_task(
@@ -1447,8 +1534,17 @@ def execute_first_last_to_video_workflow(
             if enable_rife and "video_interpolated" in result
             else None
         )
+        filename_prefix_interpolated = (
+            request.filename_prefix_interpolated
+            if enable_rife and "video_interpolated" in result
+            else None
+        )
         video_urls = extract_video_urls(
-            video_result, video_interpolated_result, enable_rife
+            video_result,
+            video_interpolated_result,
+            enable_rife,
+            filename_prefix=filename_prefix,
+            filename_prefix_interpolated=filename_prefix_interpolated,
         )
 
         task_manager.update_task(
@@ -1508,6 +1604,42 @@ async def get_task_status(task_id: str):
         response_data["error"] = task.get("error")
 
     return TaskStatusResponse(**response_data)
+
+
+@app.get("/output/{file_path:path}")
+async def download_output(file_path: str):
+    """下载输出文件（视频/图片）"""
+    try:
+        import folder_paths
+
+        output_dir = folder_paths.get_output_directory()
+    except:
+        output_dir = None
+
+    if not output_dir:
+        raise HTTPException(status_code=500, detail="输出目录未配置")
+
+    # 构建完整文件路径
+    full_path = os.path.join(output_dir, file_path)
+
+    # 安全检查：确保文件在输出目录内
+    full_path = os.path.abspath(full_path)
+    output_dir = os.path.abspath(output_dir)
+
+    if not full_path.startswith(output_dir):
+        raise HTTPException(status_code=403, detail="访问被拒绝")
+
+    if not os.path.exists(full_path):
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    if not os.path.isfile(full_path):
+        raise HTTPException(status_code=400, detail="不是文件")
+
+    return FileResponse(
+        full_path,
+        media_type="application/octet-stream",
+        filename=os.path.basename(full_path),
+    )
 
 
 if __name__ == "__main__":

@@ -1,8 +1,10 @@
 import asyncio
+import base64
 import json
 import os
 import sqlite3
 import sys
+import tempfile
 import threading
 import uuid
 from datetime import datetime, timedelta
@@ -229,6 +231,40 @@ def get_config_value(key_path: str, default: Any = None) -> Any:
         else:
             return default
     return value if value is not None else default
+
+
+def decode_base64_image(base64_str: str) -> str:
+    """
+    解码 base64 图片并保存为临时文件
+
+    Args:
+        base64_str: base64 编码的图片字符串，支持 data:image/...;base64, 前缀或纯 base64
+
+    Returns:
+        临时文件路径
+    """
+    # 移除 data:image/...;base64, 前缀（如果存在）
+    if "," in base64_str:
+        base64_str = base64_str.split(",", 1)[1]
+
+    try:
+        # 解码 base64
+        image_data = base64.b64decode(base64_str)
+    except Exception as e:
+        raise ValueError(f"无效的 base64 图片数据: {e}")
+
+    # 创建临时文件
+    temp_dir = Path(tempfile.gettempdir()) / "comfyui_server"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+
+    # 生成临时文件名
+    temp_file = temp_dir / f"image_{uuid.uuid4().hex}.png"
+
+    # 保存图片
+    with open(temp_file, "wb") as f:
+        f.write(image_data)
+
+    return str(temp_file)
 
 
 def extract_video_urls(
@@ -641,8 +677,14 @@ class ImageToVideoRequest(BaseModel):
 class FirstLastToVideoRequest(BaseModel):
     """首尾帧生视频请求参数 - 从首尾两张图片生成视频"""
 
-    start_image: str = Field(..., description="起始图片路径")
-    end_image: str = Field(..., description="结束图片路径")
+    start_image: str = Field(
+        ...,
+        description="起始图片的 base64 编码（支持 data:image/...;base64, 前缀或纯 base64）",
+    )
+    end_image: str = Field(
+        ...,
+        description="结束图片的 base64 编码（支持 data:image/...;base64, 前缀或纯 base64）",
+    )
     positive_prompt: str = Field(..., description="正向提示词")
     negative_prompt: Optional[str] = Field(None, description="负向提示词")
     clip_name: Optional[str] = None
@@ -718,7 +760,11 @@ class TaskStatusResponse(BaseModel):
 
 def execute_image_to_video_workflow(task_id: str, request: ImageToVideoRequest):
     """在后台线程中执行图生视频工作流"""
+    temp_image_file = None
     try:
+        # 解码 base64 图片并保存为临时文件
+        temp_image_file = decode_base64_image(request.image)
+
         task_manager.update_task(task_id, status=TaskStatus.PROCESSING)
 
         # 确保 NODE_CLASS_MAPPINGS 已初始化
@@ -876,9 +922,9 @@ def execute_image_to_video_workflow(task_id: str, request: ImageToVideoRequest):
             length_int = int_node.to_int(Number=length)
             scale_length_int = int_node.to_int(Number=scale_length)
 
-            # 加载图像
+            # 加载图像（使用临时文件路径）
             loadimage = nodes["LoadImage"]()
-            image_result = loadimage.load_image(image=request.image)
+            image_result = loadimage.load_image(image=temp_image_file)
 
             # 图像缩放
             layerutility = nodes["LayerUtility: ImageScaleByAspectRatio V2"]()
@@ -1107,6 +1153,13 @@ def execute_image_to_video_workflow(task_id: str, request: ImageToVideoRequest):
 
         traceback.print_exc()
         task_manager.update_task(task_id, status=TaskStatus.FAILED, error=str(e))
+    finally:
+        # 清理临时文件
+        if temp_image_file and os.path.exists(temp_image_file):
+            try:
+                os.remove(temp_image_file)
+            except:
+                pass
 
 
 @app.post("/image-to-video", response_model=TaskResponse)
@@ -1132,7 +1185,13 @@ def execute_first_last_to_video_workflow(
     task_id: str, request: FirstLastToVideoRequest
 ):
     """在后台线程中执行首尾帧生视频工作流"""
+    temp_start_image_file = None
+    temp_end_image_file = None
     try:
+        # 解码 base64 图片并保存为临时文件
+        temp_start_image_file = decode_base64_image(request.start_image)
+        temp_end_image_file = decode_base64_image(request.end_image)
+
         task_manager.update_task(task_id, status=TaskStatus.PROCESSING)
 
         # 确保 NODE_CLASS_MAPPINGS 已初始化
@@ -1290,13 +1349,13 @@ def execute_first_last_to_video_workflow(
             length_int = int_node.to_int(Number=length)
             scale_length_int = int_node.to_int(Number=scale_length)
 
-            # 加载图像
+            # 加载图像（使用临时文件路径）
             imageloader = nodes["ImageLoader"]()
             start_image_result = imageloader.load_image(
-                image=request.start_image, filepath="image", base64=""
+                image=temp_start_image_file, filepath="image", base64=""
             )
             end_image_result = imageloader.load_image(
-                image=request.end_image, filepath="image", base64=""
+                image=temp_end_image_file, filepath="image", base64=""
             )
 
             # 图像缩放
@@ -1558,6 +1617,18 @@ def execute_first_last_to_video_workflow(
 
         traceback.print_exc()
         task_manager.update_task(task_id, status=TaskStatus.FAILED, error=str(e))
+    finally:
+        # 清理临时文件
+        if temp_start_image_file and os.path.exists(temp_start_image_file):
+            try:
+                os.remove(temp_start_image_file)
+            except:
+                pass
+        if temp_end_image_file and os.path.exists(temp_end_image_file):
+            try:
+                os.remove(temp_end_image_file)
+            except:
+                pass
 
 
 @app.post("/first-last-to-video", response_model=TaskResponse)

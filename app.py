@@ -421,6 +421,8 @@ class TaskManager:
         self.lock = threading.RLock()
         self.conn = sqlite3.connect(DB_FILE, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        # 维护自己的队列：存储等待执行和执行中的任务ID
+        self.queue: list = []  # 按创建时间排序的任务ID列表
         self._init_table()
         self._load_existing_tasks()
 
@@ -446,10 +448,16 @@ class TaskManager:
     def _load_existing_tasks(self):
         """启动时将已存在的任务加载进内存（便于快速访问）"""
         with self.conn:
-            rows = self.conn.execute("SELECT * FROM tasks").fetchall()
+            rows = self.conn.execute(
+                "SELECT * FROM tasks ORDER BY created_at"
+            ).fetchall()
             for row in rows:
                 task = self._row_to_task(row)
                 self.tasks[task["task_id"]] = task
+                # 将未完成的任务添加到队列（按创建时间排序）
+                if task["status"] not in (TaskStatus.COMPLETED, TaskStatus.FAILED):
+                    if task["task_id"] not in self.queue:
+                        self.queue.append(task["task_id"])
 
     def _row_to_task(self, row: sqlite3.Row) -> Dict:
         return {
@@ -499,6 +507,9 @@ class TaskManager:
                 "result": None,
                 "error": None,
             }
+            # 添加到队列末尾
+            if task_id not in self.queue:
+                self.queue.append(task_id)
         return task_id
 
     def update_task(self, task_id: str, **kwargs):
@@ -512,6 +523,10 @@ class TaskManager:
                 if key == "status" and isinstance(value, TaskStatus):
                     fields.append("status = ?")
                     values.append(value.value)
+                    # 如果任务完成或失败，从队列中移除
+                    if value in (TaskStatus.COMPLETED, TaskStatus.FAILED):
+                        if task_id in self.queue:
+                            self.queue.remove(task_id)
                 elif key == "result":
                     fields.append("result_json = ?")
                     values.append(json.dumps(value, ensure_ascii=False))
@@ -577,58 +592,105 @@ class TaskManager:
         ):
             return task["status"]
 
-        # 检查 ComfyUI 队列状态
-        if prompt_queue is None:
-            return task["status"]
-
         prompt_id = task.get("prompt_id")
-        if not prompt_id:
-            # 还没有 prompt_id，说明还在队列中
-            return TaskStatus.QUEUED
 
-        # 检查历史记录
-        history = prompt_queue.get_history(prompt_id=prompt_id)
-        if history:
-            history_data = history.get(prompt_id, {})
-            status = history_data.get("status")
-            if status:
-                if status.get("status_str") == "success" and status.get("completed"):
-                    self.update_task(task_id, status=TaskStatus.COMPLETED)
-                    # 提取输出结果
-                    outputs = history_data.get("outputs", {})
-                    self.update_task(task_id, result=outputs)
-                    return TaskStatus.COMPLETED
-                elif status.get("status_str") == "error":
-                    self.update_task(
-                        task_id,
-                        status=TaskStatus.FAILED,
-                        error=status.get("messages", []),
-                    )
-                    return TaskStatus.FAILED
+        # 如果 prompt_queue 存在，检查 ComfyUI 的历史记录
+        if prompt_queue is not None and prompt_id:
+            # 检查历史记录
+            history = prompt_queue.get_history(prompt_id=prompt_id)
+            if history:
+                history_data = history.get(prompt_id, {})
+                status = history_data.get("status")
+                if status:
+                    if status.get("status_str") == "success" and status.get(
+                        "completed"
+                    ):
+                        self.update_task(task_id, status=TaskStatus.COMPLETED)
+                        # 提取输出结果
+                        outputs = history_data.get("outputs", {})
+                        self.update_task(task_id, result=outputs)
+                        return TaskStatus.COMPLETED
+                    elif status.get("status_str") == "error":
+                        self.update_task(
+                            task_id,
+                            status=TaskStatus.FAILED,
+                            error=status.get("messages", []),
+                        )
+                        return TaskStatus.FAILED
 
-        # 检查是否正在运行
-        running, queued = prompt_queue.get_current_queue_volatile()
+        # 使用自己的队列系统来计算排队位置
+        # 因为任务没有通过 ComfyUI 的队列系统执行，所以需要自己维护队列
+        with self.lock:
+            # 清理队列：移除已完成和失败的任务
+            self.queue = [
+                q_task_id
+                for q_task_id in self.queue
+                if q_task_id in self.tasks
+                and self.tasks[q_task_id].get("status")
+                not in (TaskStatus.COMPLETED, TaskStatus.FAILED)
+            ]
 
-        # 检查是否在运行队列中
-        for item in running:
-            if len(item) > 1 and item[1] == prompt_id:
-                self.update_task(
-                    task_id, status=TaskStatus.PROCESSING, queue_position=0
-                )
+            # 如果任务状态是 PROCESSING，说明正在执行，位置为 0
+            if task["status"] == TaskStatus.PROCESSING:
+                # 确保 PROCESSING 任务在队列中（用于追踪），但位置为0
+                if task_id not in self.queue:
+                    self.queue.append(task_id)
+                queue_position = 0
+                self.update_task(task_id, queue_position=0)
                 return TaskStatus.PROCESSING
 
-        # 检查是否在等待队列中
-        queue_position = 0
-        for item in queued:
-            queue_position += 1
-            if len(item) > 1 and item[1] == prompt_id:
-                self.update_task(
-                    task_id, status=TaskStatus.QUEUED, queue_position=queue_position
-                )
-                return TaskStatus.QUEUED
+            # 如果任务状态是 QUEUED，需要确保它在队列中并计算位置
+            # 如果任务不在队列中，按创建时间插入到正确位置（保持队列按创建时间排序）
+            if task_id not in self.queue:
+                # 找到应该插入的位置（按创建时间排序）
+                task_created_at = task.get("created_at")
+                insert_pos = len(self.queue)
+                for i, q_task_id in enumerate(self.queue):
+                    q_task = self.tasks.get(q_task_id)
+                    if q_task:
+                        q_task_created_at = q_task.get("created_at")
+                        if task_created_at and q_task_created_at:
+                            try:
+                                if datetime.fromisoformat(
+                                    task_created_at
+                                ) < datetime.fromisoformat(q_task_created_at):
+                                    insert_pos = i
+                                    break
+                            except Exception:
+                                pass
+                self.queue.insert(insert_pos, task_id)
 
-        # 如果不在队列中也不在历史中，可能是刚创建
-        return TaskStatus.QUEUED
+            # 构建有效队列：只包含 QUEUED 状态的任务（排除 PROCESSING、COMPLETED、FAILED）
+            # 有效队列保持按创建时间排序
+            valid_queue = []
+            for q_task_id in self.queue:
+                q_task = self.tasks.get(q_task_id)
+                if q_task and q_task.get("status") == TaskStatus.QUEUED:
+                    valid_queue.append(q_task_id)
+
+            # 计算排队位置（从1开始）
+            if task_id in valid_queue:
+                queue_position = valid_queue.index(task_id) + 1
+            else:
+                # 如果任务不在有效队列中，可能是状态不一致
+                # 如果任务状态是 QUEUED，应该添加到有效队列末尾
+                if task["status"] == TaskStatus.QUEUED:
+                    valid_queue.append(task_id)
+                    queue_position = len(valid_queue)
+                else:
+                    # 如果任务状态不是 QUEUED，将其视为 QUEUED 并添加到末尾
+                    valid_queue.append(task_id)
+                    queue_position = len(valid_queue)
+                    # 更新状态为 QUEUED
+                    task["status"] = TaskStatus.QUEUED
+
+            # 更新排队位置和状态
+            self.update_task(
+                task_id,
+                status=TaskStatus.QUEUED,
+                queue_position=queue_position,
+            )
+            return TaskStatus.QUEUED
 
 
 # 全局任务管理器

@@ -14,6 +14,7 @@ import torch
 import uvicorn
 import yaml
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="ComfyUI Wan2.2 Video Generation API")

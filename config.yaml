@@ -1,0 +1,69 @@
+# ComfyUI Server Configuration
+comfyui:
+  directory: null  # ComfyUI 目录路径，null 表示自动查找
+  extra_model_paths: null  # extra_model_paths.yaml 路径，null 表示自动查找
+  output_directory: null  # ComfyUI 输出目录，null 表示使用默认目录
+  base_url: "http://localhost:8000"  # 视频文件的基础 URL，用于生成访问链接
+
+# 默认模型配置
+models:
+  clip_name: "nsfw_wan_umt5-xxl_fp8_scaled.safetensors"
+  clip_type: "wan"
+  vae_name: "wan_2.1_vae.safetensors"
+  unet_low_lighting: "Wan2.2_Remix_NSFW_i2v_14b_low_lighting_v2.0.safetensors"
+  unet_high_lighting: "Wan2.2_Remix_NSFW_i2v_14b_high_lighting_v2.0.safetensors"
+  unet_weight_dtype_low: "default"
+  unet_weight_dtype_high: "fp8_e4m3fn"
+
+# 默认采样参数
+sampling:
+  steps: 6
+  start_step: 2
+  cfg: 1
+  sampler_name: "euler"
+  scheduler: "normal"
+  shift: 5.000000000000001
+
+# 默认视频参数
+video:
+  length: 81
+  batch_size: 1
+  frame_rate: 16
+  frame_rate_interpolated: 32
+  loop_count: 0
+  format: "video/h264-mp4"
+  pingpong: false
+
+# RIFE 插帧参数
+rife:
+  ckpt_name: "rife47.pth"
+  clear_cache_after_n_frames: 8
+  multiplier: 2
+  fast_mode: true
+  ensemble: true
+  scale_factor: 1
+
+# 图像处理参数
+image:
+  scale_length: 1024
+  aspect_ratio: "original"
+  proportional_width: 1
+  proportional_height: 1
+  fit: "crop"
+  method: "lanczos"
+  round_to_multiple: "16"
+  scale_to_side: "longest"
+  background_color: "#000000"
+  upscale_method: "lanczos"
+  keep_proportion: "crop"
+  pad_color: "0, 0, 0"
+  crop_position: "center"
+  divisible_by: 32
+
+# 其他参数
+other:
+  sage_attention: "auto"
+  enable_fp16_accumulation: true
+  save_output: true
+  disable_metadata: false
+

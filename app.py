@@ -6,6 +6,7 @@ import sqlite3
 import sys
 import tempfile
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta
 from enum import Enum
@@ -32,6 +33,10 @@ prompt_queue = None
 task_manager_lock = threading.RLock()
 tasks: Dict[str, Dict] = {}  # task_id -> task_info
 DB_FILE = Path(__file__).parent / "tasks.db"
+_output_cleanup_started = False
+_output_cleanup_lock = threading.Lock()
+OUTPUT_EXPIRATION_HOURS = 24
+OUTPUT_CLEANUP_INTERVAL_SECONDS = 60 * 60
 
 
 def load_config():
@@ -138,6 +143,86 @@ def add_extra_model_paths() -> None:
             "extra_model_paths 未配置，跳过额外模型路径加载。"
             "如需使用请在 config.yaml 配置 comfyui.extra_model_paths 路径。"
         )
+
+
+def resolve_output_directory(strict: bool = True) -> Optional[str]:
+    """仅使用用户明确配置的 comfyui.output_directory"""
+    comfy_cfg = config.get("comfyui", {}) if config else {}
+    output_dir = comfy_cfg.get("output_directory")
+
+    if not output_dir:
+        if strict:
+            print("警告: 未配置 comfyui.output_directory，跳过输出清理任务。")
+        return None
+
+    output_dir = os.path.abspath(output_dir)
+
+    if not os.path.isdir(output_dir):
+        print(f"警告: 配置的输出目录不存在或不可用: {output_dir}")
+        return None
+
+    return output_dir
+
+
+def cleanup_output_directory(max_age_hours: int = OUTPUT_EXPIRATION_HOURS) -> None:
+    """清理创建时间超过指定小时数的输出文件"""
+    output_dir = resolve_output_directory()
+    if not output_dir:
+        return
+
+    cutoff = datetime.now() - timedelta(hours=max_age_hours)
+    removed = 0
+
+    for root, _, files in os.walk(output_dir):
+        for filename in files:
+            path = os.path.join(root, filename)
+            try:
+                stat = os.stat(path)
+                created_ts = getattr(stat, "st_birthtime", stat.st_mtime)
+                created_at = datetime.fromtimestamp(created_ts)
+                if created_at < cutoff:
+                    os.remove(path)
+                    removed += 1
+            except Exception as e:
+                print(f"清理输出文件失败: {path}: {e}")
+
+    # 清理空目录
+    for root, dirs, files in os.walk(output_dir, topdown=False):
+        if not dirs and not files:
+            try:
+                os.rmdir(root)
+            except Exception:
+                pass
+
+    if removed:
+        print(f"已清理 {removed} 个过期输出文件（>{max_age_hours}h）。")
+
+
+def start_output_cleanup_scheduler(
+    interval_seconds: int = OUTPUT_CLEANUP_INTERVAL_SECONDS,
+) -> None:
+    """启动定时清理线程，避免重复启动"""
+    global _output_cleanup_started
+
+    output_dir = resolve_output_directory()
+    if not output_dir:
+        return
+
+    with _output_cleanup_lock:
+        if _output_cleanup_started:
+            return
+        _output_cleanup_started = True
+
+    def _worker():
+        while True:
+            try:
+                cleanup_output_directory()
+            except Exception as e:
+                print(f"定时清理输出目录失败: {e}")
+            time.sleep(interval_seconds)
+
+    thread = threading.Thread(target=_worker, name="output-cleaner", daemon=True)
+    thread.start()
 
 
 async def import_custom_nodes() -> None:
@@ -830,6 +915,7 @@ async def startup_event():
     """启动时初始化"""
     load_config()
     await initialize_comfyui()
+    start_output_cleanup_scheduler()
 
 
 @app.get("/")

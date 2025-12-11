@@ -641,7 +641,19 @@ def execute_image_to_video_workflow(task_id: str, request: ImageToVideoRequest):
     """在后台线程中执行图生视频工作流"""
     try:
         task_manager.update_task(task_id, status=TaskStatus.PROCESSING)
-        nodes = initialize_comfyui()
+
+        # 确保 NODE_CLASS_MAPPINGS 已初始化
+        global NODE_CLASS_MAPPINGS
+        if NODE_CLASS_MAPPINGS is None:
+            # 在后台线程中创建新的事件循环来运行异步初始化
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                NODE_CLASS_MAPPINGS = loop.run_until_complete(initialize_comfyui())
+            finally:
+                loop.close()
+
+        nodes = NODE_CLASS_MAPPINGS
 
         # 生成 prompt_id
         import time
@@ -1034,7 +1046,19 @@ def execute_first_last_to_video_workflow(
     """在后台线程中执行首尾帧生视频工作流"""
     try:
         task_manager.update_task(task_id, status=TaskStatus.PROCESSING)
-        nodes = initialize_comfyui()
+
+        # 确保 NODE_CLASS_MAPPINGS 已初始化
+        global NODE_CLASS_MAPPINGS
+        if NODE_CLASS_MAPPINGS is None:
+            # 在后台线程中创建新的事件循环来运行异步初始化
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                NODE_CLASS_MAPPINGS = loop.run_until_complete(initialize_comfyui())
+            finally:
+                loop.close()
+
+        nodes = NODE_CLASS_MAPPINGS
 
         # 生成 prompt_id
         import time

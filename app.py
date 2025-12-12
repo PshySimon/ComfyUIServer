@@ -503,6 +503,82 @@ def extract_video_urls(
     return video_urls
 
 
+def extract_image_urls(
+    image_result,
+    filename_prefix=None,
+):
+    """从图片结果中提取图片 URL 列表（返回相对路径，可通过 /output/{path} 下载）"""
+    image_urls = []
+
+    # 获取输出目录
+    try:
+        import folder_paths
+
+        output_dir = folder_paths.get_output_directory()
+    except:
+        output_dir = None
+
+    # 方法1: 从 image_result 的 ui 字段提取（如果存在）
+    if (
+        isinstance(image_result, dict)
+        and "ui" in image_result
+        and "images" in image_result["ui"]
+    ):
+        for img_info in image_result["ui"]["images"]:
+            filename = img_info.get("filename")
+            subfolder = img_info.get("subfolder", "")
+            file_path = os.path.join(subfolder, filename) if subfolder else filename
+            if output_dir:
+                full_path = os.path.join(output_dir, file_path)
+            else:
+                full_path = file_path
+
+            image_urls.append(
+                {
+                    "filename": filename,
+                    "subfolder": subfolder,
+                    "path": file_path.replace("\\", "/"),  # 统一使用正斜杠
+                    "full_path": full_path,
+                    "url": f"/output/{file_path.replace(chr(92), '/')}",  # 相对路径，用于下载
+                    "type": img_info.get("type", "output"),
+                }
+            )
+
+    # 方法2: 根据 filename_prefix 从输出目录查找文件
+    if not image_urls and filename_prefix and output_dir:
+        import glob
+
+        # 查找匹配的图片文件（支持多种格式）
+        image_extensions = ["*.png", "*.jpg", "*.jpeg", "*.webp"]
+        # filename_prefix 可能包含子目录，如 "2025-12-11/qwen_i2i_"
+        prefix_path = os.path.join(output_dir, filename_prefix)
+
+        for ext in image_extensions:
+            pattern = prefix_path + ext
+            matches = glob.glob(pattern)
+            if matches:
+                # 按修改时间排序，取最新的文件
+                matches.sort(key=os.path.getmtime, reverse=True)
+                for match in matches:
+                    rel_path = os.path.relpath(match, output_dir)
+                    filename = os.path.basename(match)
+                    subfolder = os.path.dirname(rel_path)
+
+                    image_urls.append(
+                        {
+                            "filename": filename,
+                            "subfolder": subfolder if subfolder != "." else "",
+                            "path": rel_path.replace("\\", "/"),  # 统一使用正斜杠
+                            "full_path": match,
+                            "url": f"/output/{rel_path.replace(chr(92), '/')}",  # 相对路径，用于下载
+                            "type": "output",
+                        }
+                    )
+                break  # 找到匹配的文件后退出
+
+    return image_urls
+
+
 # 任务状态枚举
 class TaskStatus(str, Enum):
     NOT_FOUND = "not_found"
@@ -924,6 +1000,27 @@ class FirstLastToVideoRequest(BaseModel):
     scale_length: Optional[int] = None
 
 
+class ImageToImageRequest(BaseModel):
+    """图生图请求参数 - 从单张图片生成新图片"""
+
+    image: str = Field(
+        ...,
+        description="输入图片的 base64 编码（支持 data:image/...;base64, 前缀或纯 base64）",
+    )
+    positive_prompt: str = Field(..., description="正向提示词")
+    negative_prompt: Optional[str] = Field(None, description="负向提示词")
+    checkpoint_name: Optional[str] = None
+    steps: Optional[int] = None
+    cfg: Optional[float] = None
+    sampler_name: Optional[str] = None
+    scheduler: Optional[str] = None
+    denoise: Optional[float] = None
+    seed: Optional[int] = None
+    megapixels: Optional[float] = None
+    upscale_method: Optional[str] = None
+    filename_prefix: Optional[str] = None
+
+
 @app.on_event("startup")
 async def startup_event():
     """启动时初始化"""
@@ -939,6 +1036,7 @@ async def root():
         "endpoints": {
             "/image-to-video": "图生视频 - 从单张图片生成视频",
             "/first-last-to-video": "首尾帧生视频 - 从首尾两张图片生成视频",
+            "/image-to-image": "图生图 - 从单张图片生成新图片",
             "/task/{task_id}": "查询任务状态",
         },
     }
@@ -1727,6 +1825,197 @@ async def first_last_to_video(request: FirstLastToVideoRequest):
 
     thread = threading.Thread(
         target=execute_first_last_to_video_workflow,
+        args=(task_id, request),
+        daemon=True,
+    )
+    thread.start()
+
+    return TaskResponse(
+        task_id=task_id, status=TaskStatus.QUEUED.value, message="任务已创建，正在排队"
+    )
+
+
+def execute_image_to_image_workflow(task_id: str, request: ImageToImageRequest):
+    """在后台线程中执行图生图工作流"""
+    temp_image_file = None
+    try:
+        # 解码 base64 图片并保存为临时文件
+        temp_image_file = decode_base64_image(request.image)
+
+        task_manager.update_task(task_id, status=TaskStatus.PROCESSING)
+
+        # 确保 NODE_CLASS_MAPPINGS 已初始化
+        global NODE_CLASS_MAPPINGS
+        if NODE_CLASS_MAPPINGS is None:
+            # 在后台线程中创建新的事件循环来运行异步初始化
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                NODE_CLASS_MAPPINGS = loop.run_until_complete(initialize_comfyui())
+            finally:
+                loop.close()
+
+        nodes = NODE_CLASS_MAPPINGS
+
+        # 生成 prompt_id
+        import time
+
+        prompt_id = str(int(time.time() * 1000))
+        task_manager.update_task(task_id, prompt_id=prompt_id)
+
+        # 获取配置值，优先使用请求参数
+        def get_param(key, default_key=None, default_value=None):
+            value = getattr(request, key, None)
+            if value is not None:
+                return value
+            if default_key:
+                return get_config_value(default_key, default_value)
+            return default_value
+
+        # 模型配置
+        checkpoint_name = get_param(
+            "checkpoint_name", "models.checkpoint_name", "Qwen-Rapid-AIO-v3.safetensors"
+        )
+
+        # 采样参数
+        steps = get_param("steps", "sampling.steps", 4)
+        cfg = get_param("cfg", "sampling.cfg", 1)
+        sampler_name = get_param("sampler_name", "sampling.sampler_name", "sa_solver")
+        scheduler = get_param("scheduler", "sampling.scheduler", "beta")
+        denoise = get_param("denoise", "sampling.denoise", 1)
+
+        # 图像参数
+        megapixels = get_param("megapixels", "image.megapixels", 1)
+        upscale_method = get_param("upscale_method", "image.upscale_method", "lanczos")
+
+        # 负向提示词
+        negative_prompt = request.negative_prompt or get_config_value(
+            "other.negative_prompt", ""
+        )
+
+        # 随机种子
+        import random
+
+        seed = get_param("seed") or random.randint(1, 2**64)
+
+        # 输出文件名前缀
+        filename_prefix = request.filename_prefix or "ComfyUI"
+
+        # 执行工作流
+        with torch.inference_mode():
+            # 加载 checkpoint
+            checkpointloadersimple = nodes["CheckpointLoaderSimple"]()
+            checkpoint_result = checkpointloadersimple.load_checkpoint(
+                ckpt_name=checkpoint_name
+            )
+
+            # 加载图像（使用临时文件路径）
+            loadimage = nodes["LoadImage"]()
+            image_result = loadimage.load_image(image=temp_image_file)
+
+            # 图像缩放
+            imagescaletototalpixels = nodes["ImageScaleToTotalPixels"]()
+            scaled_image = imagescaletototalpixels.EXECUTE_NORMALIZED(
+                upscale_method=upscale_method,
+                megapixels=megapixels,
+                image=get_value_at_index(image_result, 0),
+            )
+
+            # VAE 编码
+            vaeencode = nodes["VAEEncode"]()
+            vae_encoded = vaeencode.encode(
+                pixels=get_value_at_index(scaled_image, 0),
+                vae=get_value_at_index(checkpoint_result, 2),
+            )
+
+            # 文本编码（正向提示词）
+            textencodeqwenimageeditplus = nodes["TextEncodeQwenImageEditPlus"]()
+            positive_encoded = textencodeqwenimageeditplus.EXECUTE_NORMALIZED(
+                prompt=request.positive_prompt,
+                clip=get_value_at_index(checkpoint_result, 1),
+                vae=get_value_at_index(checkpoint_result, 2),
+                image1=get_value_at_index(image_result, 0),
+            )
+
+            # 文本编码（负向提示词）
+            negative_encoded = textencodeqwenimageeditplus.EXECUTE_NORMALIZED(
+                prompt=negative_prompt,
+                clip=get_value_at_index(checkpoint_result, 1),
+                vae=get_value_at_index(checkpoint_result, 2),
+            )
+
+            # 采样
+            ksampler = nodes["KSampler"]()
+            sampled_result = ksampler.sample(
+                seed=seed,
+                steps=steps,
+                cfg=cfg,
+                sampler_name=sampler_name,
+                scheduler=scheduler,
+                denoise=denoise,
+                model=get_value_at_index(checkpoint_result, 0),
+                positive=get_value_at_index(positive_encoded, 0),
+                negative=get_value_at_index(negative_encoded, 0),
+                latent_image=get_value_at_index(vae_encoded, 0),
+            )
+
+            # VAE 解码
+            vaedecode = nodes["VAEDecode"]()
+            decoded_result = vaedecode.decode(
+                samples=get_value_at_index(sampled_result, 0),
+                vae=get_value_at_index(checkpoint_result, 2),
+            )
+
+            # 保存图片
+            saveimage = nodes["SaveImage"]()
+            save_result = saveimage.save_images(
+                filename_prefix=filename_prefix,
+                images=get_value_at_index(decoded_result, 0),
+            )
+
+            result = {
+                "status": "success",
+                "image": {
+                    "filename_prefix": filename_prefix,
+                },
+            }
+
+        # 提取图片文件路径
+        image_urls = extract_image_urls(
+            save_result,
+            filename_prefix=filename_prefix,
+        )
+
+        task_manager.update_task(
+            task_id,
+            status=TaskStatus.COMPLETED,
+            result={"image_urls": image_urls, "details": result},
+        )
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        task_manager.update_task(task_id, status=TaskStatus.FAILED, error=str(e))
+    finally:
+        # 清理临时文件
+        if temp_image_file and os.path.exists(temp_image_file):
+            try:
+                os.remove(temp_image_file)
+            except:
+                pass
+
+
+@app.post("/image-to-image", response_model=TaskResponse)
+async def image_to_image(request: ImageToImageRequest):
+    """图生图接口 - 从单张图片生成新图片（异步）"""
+    # 创建任务
+    task_id = task_manager.create_task("image-to-image", request.dict())
+
+    # 在后台线程中执行工作流
+    import threading
+
+    thread = threading.Thread(
+        target=execute_image_to_image_workflow,
         args=(task_id, request),
         daemon=True,
     )

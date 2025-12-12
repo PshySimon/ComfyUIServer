@@ -1100,17 +1100,17 @@ def execute_image_to_video_workflow(task_id: str, request: ImageToVideoRequest):
                 return get_config_value(default_key, None)
             return None
 
-        # 模型配置
-        clip_name = get_param("clip_name", "models.clip_name")
-        clip_type = get_param("clip_type", "models.clip_type")
-        vae_name = get_param("vae_name", "models.vae_name")
-        unet_low = get_param("unet_low_lighting", "models.unet_low_lighting")
-        unet_high = get_param("unet_high_lighting", "models.unet_high_lighting")
+        # 模型配置（视频生成）
+        clip_name = get_param("clip_name", "video_models.clip_name")
+        clip_type = get_param("clip_type", "video_models.clip_type")
+        vae_name = get_param("vae_name", "video_models.vae_name")
+        unet_low = get_param("unet_low_lighting", "video_models.unet_low_lighting")
+        unet_high = get_param("unet_high_lighting", "video_models.unet_high_lighting")
         unet_dtype_low = get_param(
-            "unet_weight_dtype_low", "models.unet_weight_dtype_low"
+            "unet_weight_dtype_low", "video_models.unet_weight_dtype_low"
         )
         unet_dtype_high = get_param(
-            "unet_weight_dtype_high", "models.unet_weight_dtype_high"
+            "unet_weight_dtype_high", "video_models.unet_weight_dtype_high"
         )
 
         # 采样参数
@@ -1466,17 +1466,17 @@ def execute_first_last_to_video_workflow(
                 return get_config_value(default_key, None)
             return None
 
-        # 模型配置
-        clip_name = get_param("clip_name", "models.clip_name")
-        clip_type = get_param("clip_type", "models.clip_type")
-        vae_name = get_param("vae_name", "models.vae_name")
-        unet_low = get_param("unet_low_lighting", "models.unet_low_lighting")
-        unet_high = get_param("unet_high_lighting", "models.unet_high_lighting")
+        # 模型配置（视频生成）
+        clip_name = get_param("clip_name", "video_models.clip_name")
+        clip_type = get_param("clip_type", "video_models.clip_type")
+        vae_name = get_param("vae_name", "video_models.vae_name")
+        unet_low = get_param("unet_low_lighting", "video_models.unet_low_lighting")
+        unet_high = get_param("unet_high_lighting", "video_models.unet_high_lighting")
         unet_dtype_low = get_param(
-            "unet_weight_dtype_low", "models.unet_weight_dtype_low"
+            "unet_weight_dtype_low", "video_models.unet_weight_dtype_low"
         )
         unet_dtype_high = get_param(
-            "unet_weight_dtype_high", "models.unet_weight_dtype_high"
+            "unet_weight_dtype_high", "video_models.unet_weight_dtype_high"
         )
 
         # 采样参数
@@ -1872,9 +1872,11 @@ def execute_image_to_image_workflow(task_id: str, request: ImageToImageRequest):
                 return get_config_value(default_key, default_value)
             return default_value
 
-        # 模型配置
+        # 模型配置（图片生成）
         checkpoint_name = get_param(
-            "checkpoint_name", "models.checkpoint_name", "Qwen-Rapid-AIO-v3.safetensors"
+            "checkpoint_name",
+            "image_models.checkpoint_name",
+            "Qwen-Rapid-AIO-v3.safetensors",
         )
 
         # 采样参数

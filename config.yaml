@@ -20,8 +20,8 @@ comfyui:
   # 视频文件的基础 URL，用于生成访问链接
   base_url: "http://localhost:8000"
 
-# 默认模型配置
-models:
+# 视频生成模型配置（用于图生视频和首尾帧生视频）
+video_models:
   clip_name: "nsfw_wan_umt5-xxl_fp8_scaled.safetensors"
   clip_type: "wan"
   vae_name: "wan_2.1_vae.safetensors"
@@ -29,6 +29,10 @@ models:
   unet_high_lighting: "Wan2.2_Remix_NSFW_i2v_14b_high_lighting_v2.0.safetensors"
   unet_weight_dtype_low: "default"
   unet_weight_dtype_high: "fp8_e4m3fn"
+
+# 图片生成模型配置（用于图生图）
+image_models:
+  checkpoint_name: "Qwen-Rapid-AIO-v3.safetensors"
 
 # 默认采样参数
 sampling:

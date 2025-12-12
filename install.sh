@@ -360,100 +360,21 @@ fi
 
 echo ""
 
-# 模型权重下载（关闭固定进度条显示）
-start_step "下载模型权重"
-IN_DOWNLOAD=1
-echo "开始下载模型权重..."
-
-# 创建模型目录
-mkdir -p "$INSTALL_DIR/models/unet"
-mkdir -p "$INSTALL_DIR/models/clip"
-mkdir -p "$INSTALL_DIR/models/vae"
-
-# 下载函数（支持断点续传，优先使用 aria2）
-download_model() {
-    local url=$1
-    local output_dir=$2
-    local filename=$(basename "$url")
-    local output_path="$output_dir/$filename"
-    
-    # 如果文件已存在，检查文件是否完整
-    if [ -f "$output_path" ]; then
-        local local_size=$(stat -f%z "$output_path" 2>/dev/null || stat -c%s "$output_path" 2>/dev/null || echo "0")
-        local remote_size=""
-        
-        # 尝试获取远程文件大小
-        if command -v wget >/dev/null 2>&1; then
-            remote_size=$(wget --spider --server-response "$url" 2>&1 | grep -i "content-length:" | awk '{print $2}' | tail -1)
-        elif command -v curl >/dev/null 2>&1; then
-            remote_size=$(curl -sI "$url" | grep -i "content-length:" | awk '{print $2}' | tr -d '\r')
-        fi
-        
-        # 如果本地文件大小等于远程文件大小，说明文件完整，跳过下载
-        if [ -n "$remote_size" ] && [ "$local_size" = "$remote_size" ] && [ "$local_size" != "0" ]; then
-            echo "  文件已完整，跳过下载: $filename"
-            return 0
-        fi
-        
-        # 文件存在但不完整，继续下载
-        if [ "$local_size" != "0" ]; then
-            echo "  文件不完整，继续下载: $filename"
-        else
-            echo "  正在下载: $filename"
-        fi
-    else
-        echo "  正在下载: $filename"
+# 模型权重下载（调用独立的下载脚本）
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/download.sh" ]; then
+    start_step "下载模型权重"
+    bash "$SCRIPT_DIR/download.sh" "$INSTALL_DIR"
+    DOWNLOAD_EXIT_CODE=$?
+    end_step
+    if [ $DOWNLOAD_EXIT_CODE -ne 0 ]; then
+        FAILED_TASKS+=("模型权重下载")
     fi
-    
-    # 优先使用 aria2（多线程下载，速度快）
-    if command -v aria2c >/dev/null 2>&1; then
-        if ! aria2c -x 8 -s 8 --continue=true --max-connection-per-server=8 --min-split-size=1M --dir="$(dirname "$output_path")" --out="$filename" "$url"; then
-            FAILED_TASKS+=("下载 $filename")
-            return 1
-        fi
-    elif command -v wget >/dev/null 2>&1; then
-        if ! wget -c --show-progress -O "$output_path" "$url"; then
-            FAILED_TASKS+=("下载 $filename")
-            return 1
-        fi
-    elif command -v curl >/dev/null 2>&1; then
-        if ! curl -L -C - --progress-bar -o "$output_path" "$url"; then
-            FAILED_TASKS+=("下载 $filename")
-            return 1
-        fi
-    else
-        FAILED_TASKS+=("未找到下载工具")
-        return 1
-    fi
-    return 0
-}
-
-# 并行下载模型文件
-VAE_URL="https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors"
-UNET_URL1="https://huggingface.co/FX-FeiHou/wan2.2-Remix/resolve/main/NSFW/Wan2.2_Remix_NSFW_i2v_14b_high_lighting_v2.0.safetensors"
-UNET_URL2="https://huggingface.co/FX-FeiHou/wan2.2-Remix/resolve/main/NSFW/Wan2.2_Remix_NSFW_i2v_14b_low_lighting_v2.0.safetensors"
-CLIP_URL="https://huggingface.co/NSFW-API/NSFW-Wan-UMT5-XXL/resolve/main/nsfw_wan_umt5-xxl_bf16.safetensors"
-
-# 并行下载所有模型文件
-download_model "$VAE_URL" "$INSTALL_DIR/models/vae" &
-PID1=$!
-download_model "$UNET_URL1" "$INSTALL_DIR/models/unet" &
-PID2=$!
-download_model "$UNET_URL2" "$INSTALL_DIR/models/unet" &
-PID3=$!
-download_model "$CLIP_URL" "$INSTALL_DIR/models/clip" &
-PID4=$!
-
-# 等待所有下载完成
-wait $PID1 || FAILED_TASKS+=("wan2.1 vae 模型下载失败")
-wait $PID2 || FAILED_TASKS+=("wan2.2 high_lighting 模型下载失败")
-wait $PID3 || FAILED_TASKS+=("wan2.2 low_lighting 模型下载失败")
-wait $PID4 || FAILED_TASKS+=("umt 模型下载失败")
-
-echo "模型权重下载完成！"
-end_step
-IN_DOWNLOAD=0
-echo ""
+    echo ""
+else
+    echo "警告: 未找到 download.sh 脚本，跳过模型下载"
+    update_progress
+fi
 
 # 计算总耗时
 END_TIME=$(date +%s)

@@ -1247,6 +1247,17 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
         
         # 打印工作流数据用于调试
         import sys
+        import json
+        
+        # 保存工作流数据到文件，方便调试
+        debug_file = f"/tmp/workflow_debug_{task_id}.json"
+        try:
+            with open(debug_file, "w") as f:
+                json.dump(workflow_data, f, indent=2, ensure_ascii=False)
+            print(f"[DEBUG] 工作流数据已保存到: {debug_file}")
+        except Exception as e:
+            print(f"[DEBUG] 保存工作流数据失败: {e}")
+        
         sys.stdout.flush()
         
         # 执行

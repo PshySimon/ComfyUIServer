@@ -759,10 +759,8 @@ class WorkflowParser:
             if not node_type:
                 continue
             
-            # 跳过 bypass 和 muted 的节点
-            if node_mode in (2, 4):
-                print(f"[DEBUG] 跳过 mode={node_mode} 的节点: {node_type} (ID={node_id})")
-                continue
+            # 注意：不再跳过 bypass 节点，因为下游节点可能依赖它们
+            # 我们会在执行前用有效图片替换未使用的 LoadImage 节点的输入
             
             # 跳过 Reroute 和 Note 等辅助节点
             if node_type in ("Reroute", "Note", "PrimitiveNode"):
@@ -1113,11 +1111,6 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
         # 解析工作流（需要转成 API 格式）
         parser = WorkflowParser(workflow_path)
         parser.load()
-        
-        # 根据图片数量动态启用/禁用 LoadImage 节点
-        if image_count > 0:
-            parser.enable_load_image_nodes(image_count)
-        
         workflow_data = parser.workflow_data
         
         # 应用用户参数到工作流
@@ -1139,6 +1132,18 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
                     new_value = processed_params[param_name]
                     print(f"[DEBUG] 覆盖参数: {param_name} | {old_value} -> {new_value}")
                     node_data["inputs"][key] = new_value
+        
+        # 处理未被覆盖的 LoadImage 节点：复用第一张图片
+        # 这样可以保持工作流的完整性，避免节点依赖问题
+        first_image = processed_params.get("image_1")
+        if first_image:
+            for node_id, node_data in workflow_data.items():
+                if node_data.get("class_type") == "LoadImage":
+                    image_param = f"image_{node_id}"
+                    if image_param not in processed_params:
+                        # 这个 LoadImage 节点没有被用户参数覆盖，复用第一张图片
+                        node_data["inputs"]["image"] = first_image
+                        print(f"[DEBUG] LoadImage 节点 {node_id} 复用第一张图片: {first_image}")
         
         # 再次打印 LoadImage 节点确认覆盖结果
         for node_id, node_data in workflow_data.items():

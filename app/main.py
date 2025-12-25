@@ -1595,28 +1595,44 @@ async def get_task_status(task_id: str):
 
 @app.get("/output/{file_path:path}")
 async def download_output(file_path: str):
-    """下载输出文件"""
+    """下载输出文件，支持 output 和 temp 目录"""
+    # 尝试多个目录查找文件
+    search_dirs = []
+    
+    # 1. 配置的 output 目录
     try:
-        output_dir = get_output_directory()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"输出目录未配置: {e}")
+        search_dirs.append(get_output_directory())
+    except Exception:
+        pass
     
-    full_path = (output_dir / file_path).resolve()
+    # 2. ComfyUI 的 output 目录
+    comfyui_dir = get_comfyui_directory()
+    if comfyui_dir:
+        search_dirs.append(Path(comfyui_dir) / "output")
+        # 3. ComfyUI 的 temp 目录（PreviewImage 节点使用）
+        search_dirs.append(Path(comfyui_dir) / "temp")
     
-    # 安全检查 - 确保路径在 output_dir 内
-    try:
-        full_path.relative_to(output_dir.resolve())
-    except ValueError:
-        raise HTTPException(status_code=403, detail="访问被拒绝")
+    # 在所有目录中查找文件
+    for search_dir in search_dirs:
+        if not search_dir.exists():
+            continue
+        
+        full_path = (search_dir / file_path).resolve()
+        
+        # 安全检查 - 确保路径在 search_dir 内
+        try:
+            full_path.relative_to(search_dir.resolve())
+        except ValueError:
+            continue
+        
+        if full_path.exists():
+            return FileResponse(
+                str(full_path),
+                media_type="application/octet-stream",
+                filename=full_path.name
+            )
     
-    if not full_path.exists():
-        raise HTTPException(status_code=404, detail="文件不存在")
-    
-    return FileResponse(
-        str(full_path),
-        media_type="application/octet-stream",
-        filename=full_path.name
-    )
+    raise HTTPException(status_code=404, detail="文件不存在")
 
 
 # ============================================================================

@@ -25,8 +25,8 @@ comfyui:
 
 # 文件目录配置
 storage:
-  # 上传图片目录（相对于项目根目录，或绝对路径）
-  input_directory: "uploads"
+  # 上传图片目录（ComfyUI LoadImage 节点需要从这里读取）
+  input_directory: "ComfyUI/input"
   
   # 输出文件目录（相对于项目根目录，或绝对路径）
   output_directory: "outputs"

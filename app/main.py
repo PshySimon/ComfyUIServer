@@ -1223,92 +1223,71 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
             if node_data.get("class_type") == "LoadImage":
                 print(f"[DEBUG] 覆盖后 LoadImage 节点 {node_id}: inputs={node_data.get('inputs', {})}")
         
-        # 使用 ComfyUI 原生 PromptExecutor 执行
-        import execution
-        import server
+        # 使用 WorkflowExecutor 执行（参考 ComfyUI-SaveAsScript 方式）
+        print(f"[DEBUG] 准备执行工作流，节点数: {len(workflow_data)}")
         
-        # 获取 PromptServer 实例（ComfyUI 初始化时已创建）
-        prompt_server = server.PromptServer.instance
+        # 确定执行顺序
+        load_order = parser.determine_load_order()
+        print(f"[DEBUG] 执行顺序: {[node_id for node_id, _ in load_order]}")
         
-        # 创建执行器（需要传入 cache_args 避免 NoneType 错误）
-        cache_args = {"ram": 0, "vram": 0}  # 默认缓存参数
-        prompt_executor = execution.PromptExecutor(prompt_server, cache_args=cache_args)
+        # 创建执行器并执行
+        executor = WorkflowExecutor(NODE_CLASS_MAPPINGS)
         
-        # 执行工作流
-        prompt_id = task_id
-        output_node_ids = []
-        for node_id, node_data in workflow_data.items():
-            class_type = node_data.get("class_type", "")
-            if class_type in ("SaveImage", "PreviewImage", "VHS_VideoCombine"):
-                output_node_ids.append(node_id)
-        
-        print(f"[DEBUG] 准备执行工作流，output_node_ids: {output_node_ids}")
-        print(f"[DEBUG] workflow_data 节点数: {len(workflow_data)}")
-        
-        # 打印工作流数据用于调试
         import sys
-        import json
-        
-        # 保存工作流数据到文件，方便调试
-        debug_file = f"/tmp/workflow_debug_{task_id}.json"
-        try:
-            with open(debug_file, "w") as f:
-                json.dump(workflow_data, f, indent=2, ensure_ascii=False)
-            print(f"[DEBUG] 工作流数据已保存到: {debug_file}")
-        except Exception as e:
-            print(f"[DEBUG] 保存工作流数据失败: {e}")
-        
         sys.stdout.flush()
         
-        # 执行
         try:
-            print("[DEBUG] 开始执行 prompt_executor.execute...")
+            print("[DEBUG] 开始执行工作流...")
             sys.stdout.flush()
-            prompt_executor.execute(
-                workflow_data,
-                prompt_id,
-                extra_data={"extra_pnginfo": {"workflow": workflow_data}},
-                execute_outputs=output_node_ids
-            )
-            print("[DEBUG] prompt_executor.execute 完成")
+            results = executor.execute(workflow_data, load_order, processed_params)
+            print("[DEBUG] 工作流执行完成")
             sys.stdout.flush()
         except Exception as exec_error:
-            print(f"[ERROR] prompt_executor.execute 失败: {exec_error}")
+            print(f"[ERROR] 工作流执行失败: {exec_error}")
             import traceback
             traceback.print_exc()
             sys.stdout.flush()
             raise
         
-        # 获取执行结果（history_result 在执行后被设置）
-        outputs = getattr(prompt_executor, 'history_result', {}).get("outputs", {})
-        
         # 提取输出文件
         output_files = []
         output_results = {}
         
-        for node_id, ui_result in outputs.items():
-            if ui_result:
-                output_results[node_id] = ui_result
-                
-                if "images" in ui_result:
-                    for img in ui_result["images"]:
-                        filename = img.get("filename", "")
-                        subfolder = img.get("subfolder", "")
-                        output_files.append({
-                            "type": "image",
-                            "filename": filename,
-                            "url": generate_output_url(filename, subfolder)
-                        })
-                
-                if "gifs" in ui_result:
-                    for gif in ui_result["gifs"]:
-                        filename = gif.get("filename", "")
-                        subfolder = gif.get("subfolder", "")
-                        output_files.append({
-                            "type": "video",
-                            "filename": filename,
-                            "url": generate_output_url(filename, subfolder)
-                        })
+        for node_id, node_data in workflow_data.items():
+            class_type = node_data.get("class_type", "")
+            if class_type in ("SaveImage", "PreviewImage", "VHS_VideoCombine"):
+                if node_id in results:
+                    ui_result = results[node_id]
+                    if ui_result:
+                        # 结果可能是 tuple，取 ui 部分
+                        if isinstance(ui_result, tuple) and len(ui_result) > 0:
+                            ui_data = ui_result[0] if isinstance(ui_result[0], dict) else {}
+                        elif isinstance(ui_result, dict):
+                            ui_data = ui_result.get("ui", ui_result)
+                        else:
+                            ui_data = {}
+                        
+                        output_results[node_id] = ui_data
+                        
+                        if "images" in ui_data:
+                            for img in ui_data["images"]:
+                                filename = img.get("filename", "")
+                                subfolder = img.get("subfolder", "")
+                                output_files.append({
+                                    "type": "image",
+                                    "filename": filename,
+                                    "url": generate_output_url(filename, subfolder)
+                                })
+                        
+                        if "gifs" in ui_data:
+                            for gif in ui_data["gifs"]:
+                                filename = gif.get("filename", "")
+                                subfolder = gif.get("subfolder", "")
+                                output_files.append({
+                                    "type": "video",
+                                    "filename": filename,
+                                    "url": generate_output_url(filename, subfolder)
+                                })
         
         task_manager.update_task(
             task_id,

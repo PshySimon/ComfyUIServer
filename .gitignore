@@ -1,0 +1,5 @@
+# ComfyUI installation
+ComfyUI/
+
+# Workflow files
+workflows/*

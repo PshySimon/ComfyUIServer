@@ -1644,8 +1644,18 @@ async def download_output(file_path: str):
 
 class ImageToImageRequest(BaseModel):
     """图生图请求"""
-    images: List[str] = Field(..., description="输入图片列表（base64编码），支持1-3张")
+    # 支持两种格式：image (单张) 或 images (多张)
+    image: Optional[str] = Field(default=None, description="输入图片（base64编码）- 单张模式")
+    images: Optional[List[str]] = Field(default=None, description="输入图片列表（base64编码）- 多张模式，支持1-3张")
     positive_prompt: str = Field(default="", description="正向提示词")
+    negative_prompt: str = Field(default="", description="反向提示词（当前工作流未使用）")
+    width: int = Field(default=1024, description="输出宽度")
+    height: int = Field(default=1024, description="输出高度")
+    seed: Optional[int] = Field(default=None, description="随机种子，不传则随机")
+    steps: int = Field(default=10, description="采样步数")
+    cfg: float = Field(default=1.0, description="CFG 强度")
+    api_key: str = Field(default="none", description="API Key（保留字段）")
+    model: str = Field(default="qwen-image-edit", description="模型名称（保留字段）")
 
 
 class ImageToVideoRequest(BaseModel):
@@ -1656,11 +1666,18 @@ class ImageToVideoRequest(BaseModel):
 
 @app.post("/image-to-image", response_model=TaskResponse)
 async def image_to_image(request: ImageToImageRequest):
-    """图生图接口，支持1-3张图片"""
+    """图生图接口，支持单张或多张图片（1-3张）"""
     if not registered_workflows:
         raise HTTPException(status_code=404, detail="没有配置任何工作流")
     
-    if not request.images or len(request.images) > 3:
+    # 兼容两种输入格式：image (单张) 或 images (多张)
+    images = []
+    if request.images:
+        images = request.images
+    elif request.image:
+        images = [request.image]
+    
+    if not images or len(images) > 3:
         raise HTTPException(status_code=400, detail="请提供1-3张图片")
     
     workflow_name = next(iter(registered_workflows))
@@ -1677,8 +1694,22 @@ async def image_to_image(request: ImageToImageRequest):
     else:
         params["positive_prompt"] = request.positive_prompt
     
+    # 映射其他参数
+    param_mappings = {
+        "width": request.width,
+        "height": request.height,
+        "seed": request.seed if request.seed is not None else random.randint(0, 2**32 - 1),
+        "steps": request.steps,
+        "cfg": request.cfg,
+    }
+    for param_name, param_value in param_mappings.items():
+        if param_name in input_mapping:
+            params[input_mapping[param_name]] = param_value
+        else:
+            params[param_name] = param_value
+    
     # 映射图片（image1 -> image_1, image2 -> image_2, ...）
-    for i, img in enumerate(request.images, 1):
+    for i, img in enumerate(images, 1):
         key = f"image{i}"
         if key in input_mapping:
             images_dict[input_mapping[key]] = img  # 放到 _images 里

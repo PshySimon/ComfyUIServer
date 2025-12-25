@@ -1298,8 +1298,8 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
             result={
                 "files": output_files,
                 "outputs": output_results,
-                "image_urls": [f["url"] for f in output_files if f["type"] == "image"],
-                "video_urls": [f["url"] for f in output_files if f["type"] == "video"],
+                "image_urls": [{"url": f["url"]} for f in output_files if f["type"] == "image"],
+                "video_urls": [{"url": f["url"]} for f in output_files if f["type"] == "video"],
             }
         )
         

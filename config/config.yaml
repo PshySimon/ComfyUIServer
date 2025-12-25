@@ -1,0 +1,122 @@
+# ComfyUI Dynamic Workflow Server Configuration
+# 
+# ============================================================================
+# 使用说明:
+# 1. 在 ComfyUI 中设计好工作流
+# 2. 点击 "Save" 保存工作流 JSON 文件（普通格式或 API 格式均可）
+# 3. 将 JSON 文件放到 workflows/ 目录
+# 4. 在下方 workflows 配置中添加工作流信息，定义输入输出映射
+# 5. 启动服务: python -m app.main
+#
+# 注意: 服务会自动检测并转换工作流格式，无需手动导出 API 格式！
+# ============================================================================
+
+# ComfyUI 配置
+comfyui:
+  # ComfyUI 目录路径
+  # 如果不填，会自动查找当前目录下的 ComfyUI 文件夹
+  directory: null
+  
+  # 额外模型路径配置（可选）
+  extra_model_paths: null
+  
+  # 输出文件访问 URL 前缀
+  base_url: "http://localhost:6006"
+
+# 文件目录配置
+storage:
+  # 上传图片目录（相对于项目根目录，或绝对路径）
+  input_directory: "uploads"
+  
+  # 输出文件目录（相对于项目根目录，或绝对路径）
+  output_directory: "outputs"
+  
+  # 自动清理配置
+  cleanup:
+    enabled: true           # 是否启用自动清理
+    interval_hours: 3       # 清理间隔（小时）
+    max_age_days: 15        # 文件保留天数，超过则删除
+
+# 服务器配置
+server:
+  host: "0.0.0.0"
+  port: 6006
+
+# ============================================================================
+# 工作流配置
+# ============================================================================
+# 每个工作流会被转换为一个 API 端点: POST /workflow/{name}
+#
+# 配置说明:
+#   name: API 端点名称 (必填)
+#   path: 工作流 JSON 路径，相对于项目根目录 (必填)
+#   description: 工作流描述 (可选)
+#   inputs: 输入参数映射 (可选)
+#     - 格式: {友好名称}: {节点参数}
+#     - 节点参数格式: {input_key}_{node_id}
+#     - 例如: prompt: "text_6" 表示 API 的 prompt 字段映射到节点 6 的 text 输入
+#   outputs: 输出节点配置 (可选)
+#     - 格式: {输出名称}: {节点类型}
+#     - 例如: image: "SaveImage" 表示从 SaveImage 节点提取输出
+#
+# ============================================================================
+# 配置示例:
+# 
+# workflows:
+#   # 文生图工作流
+#   - name: "text_to_image"
+#     path: "workflows/sd15_t2i.json"
+#     description: "SD1.5 文生图"
+#     inputs:
+#       prompt: "text_6"              # 正向提示词
+#       negative_prompt: "text_7"     # 反向提示词
+#       seed: "seed_3"                # 随机种子
+#       steps: "steps_3"              # 采样步数
+#       width: "width_5"              # 图片宽度
+#       height: "height_5"            # 图片高度
+#     outputs:
+#       image: "SaveImage"            # 输出图片
+#
+#   # 图生视频工作流
+#   - name: "image_to_video"
+#     path: "workflows/wan_i2v.json"
+#     description: "Wan2.2 图生视频"
+#     inputs:
+#       image: "image_1"              # 输入图片（支持 base64/URL/文件名）
+#       prompt: "text_6"              # 提示词
+#       negative_prompt: "text_7"     # 反向提示词
+#       seed: "seed_10"               # 随机种子
+#       frames: "frames_15"           # 帧数
+#     outputs:
+#       video: "VHS_VideoCombine"     # 输出视频
+#
+#   # 图生图工作流
+#   - name: "image_to_image"
+#     path: "workflows/sd15_i2i.json"
+#     description: "SD1.5 图生图"
+#     inputs:
+#       image: "image_1"              # 输入图片
+#       prompt: "text_6"              # 提示词
+#       negative_prompt: "text_7"     # 反向提示词
+#       strength: "denoise_3"         # 重绘强度
+#       seed: "seed_3"                # 随机种子
+#     outputs:
+#       image: "SaveImage"            # 输出图片
+#
+# ============================================================================
+
+workflows:
+  # Qwen Image Edit eigen-banana 工作流
+  # 输入 3 张图片 + 编辑指令 → 输出编辑后的图片
+  - name: "eigen_banana"
+    path: "workflows/eigen_banana.json"
+    description: "Qwen Image Edit - 多图编辑工作流"
+    inputs:
+      # 必填：3 张输入图片
+      image1: "image_1"           # 第一张输入图片
+      image2: "image_2"           # 第二张输入图片
+      image3: "image_3"           # 第三张输入图片
+      # 必填：编辑指令
+      prompt: "text_39"           # 例如："去掉蓝色乳胶衣"
+    outputs:
+      image: "PreviewImage"

@@ -44,6 +44,7 @@ class ComfyUIInstaller:
     COMFYUI_REPO = "https://github.com/comfyanonymous/ComfyUI.git"
     MANAGER_REPO = "https://github.com/ltdrdata/ComfyUI-Manager.git"
     MODELS_DOWNLOADER_REPO = "https://github.com/slahiri/ComfyUI-Workflow-Models-Downloader.git"
+    SAVE_AS_SCRIPT_REPO = "https://github.com/atmaranto/ComfyUI-SaveAsScript.git"
     NODE_MAP_URL = "https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/extension-node-map.json"
     
     def __init__(self, install_dir: str, workflow_file: Optional[str] = None, skip_deps: bool = False):
@@ -55,6 +56,7 @@ class ComfyUIInstaller:
         self.custom_nodes_dir = self.comfyui_dir / "custom_nodes"
         self.manager_dir = self.custom_nodes_dir / "ComfyUI-Manager"
         self.models_downloader_dir = self.custom_nodes_dir / "ComfyUI-Workflow-Models-Downloader"
+        self.save_as_script_dir = self.custom_nodes_dir / "ComfyUI-SaveAsScript"
         self.cm_cli = self.manager_dir / "cm-cli.py"
         
         self.console = Console()
@@ -623,6 +625,7 @@ class ComfyUIInstaller:
             ("Install dependencies", self.install_requirements),
             ("Clone ComfyUI-Manager", lambda: self.clone_or_pull(self.MANAGER_REPO, self.manager_dir, "ComfyUI-Manager")),
             ("Clone Models-Downloader", lambda: self.clone_or_pull(self.MODELS_DOWNLOADER_REPO, self.models_downloader_dir, "Workflow-Models-Downloader")),
+            ("Clone SaveAsScript", lambda: self.clone_or_pull(self.SAVE_AS_SCRIPT_REPO, self.save_as_script_dir, "SaveAsScript")),
         ]
         
         # Extract workflow deps first to know total node count

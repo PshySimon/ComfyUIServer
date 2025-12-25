@@ -1452,8 +1452,9 @@ async def image_to_image(request: ImageToImageRequest):
     wf = registered_workflows[workflow_name]
     input_mapping = wf.get("input_mapping", {})
     
-    # 构建参数（使用 input_mapping 转换为工作流节点参数名）
+    # 构建参数
     params = {}
+    images_dict = {}  # 图片参数需要放到 _images 里让执行器处理
     
     # 映射提示词
     if "positive_prompt" in input_mapping:
@@ -1465,9 +1466,11 @@ async def image_to_image(request: ImageToImageRequest):
     for i, img in enumerate(request.images, 1):
         key = f"image{i}"
         if key in input_mapping:
-            params[input_mapping[key]] = img  # 传原始 base64，让工作流执行器处理
+            images_dict[input_mapping[key]] = img  # 放到 _images 里
         else:
-            params[key] = img
+            images_dict[key] = img
+    
+    params["_images"] = images_dict
     
     task_id = task_manager.create_task(workflow_name, params)
     task_queue.put((task_id, workflow_name, wf["path"], params))
@@ -1494,6 +1497,7 @@ async def image_to_video(request: ImageToVideoRequest):
     
     # 构建参数
     params = {}
+    images_dict = {}
     
     # 映射提示词
     if "positive_prompt" in input_mapping:
@@ -1505,9 +1509,11 @@ async def image_to_video(request: ImageToVideoRequest):
     for i, img in enumerate(request.images, 1):
         key = f"image{i}"
         if key in input_mapping:
-            params[input_mapping[key]] = img
+            images_dict[input_mapping[key]] = img
         else:
-            params[key] = img
+            images_dict[key] = img
+    
+    params["_images"] = images_dict
     
     task_id = task_manager.create_task(workflow_name, params)
     task_queue.put((task_id, workflow_name, wf["path"], params))

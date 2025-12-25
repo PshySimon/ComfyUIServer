@@ -7,17 +7,20 @@ cd "$SCRIPT_DIR"
 PID_FILE="$SCRIPT_DIR/.server.pid"
 LOG_FILE="$SCRIPT_DIR/server.log"
 
-# 检查服务是否已经在运行
+# 检查并关闭已运行的服务
 if [ -f "$PID_FILE" ]; then
     OLD_PID=$(cat "$PID_FILE")
     if ps -p "$OLD_PID" > /dev/null 2>&1; then
-        echo "⚠️  服务已在运行 (PID: $OLD_PID)"
-        echo "请先执行 ./stop.sh 停止服务"
-        exit 1
-    else
-        echo "清理旧的 PID 文件..."
-        rm -f "$PID_FILE"
+        echo "⚠️  发现旧服务正在运行 (PID: $OLD_PID)，正在关闭..."
+        kill "$OLD_PID" 2>/dev/null
+        sleep 1
+        # 如果还在运行，强制杀掉
+        if ps -p "$OLD_PID" > /dev/null 2>&1; then
+            kill -9 "$OLD_PID" 2>/dev/null
+        fi
+        echo "✅ 旧服务已关闭"
     fi
+    rm -f "$PID_FILE"
 fi
 
 # 检查端口是否被占用

@@ -672,6 +672,40 @@ class WorkflowParser:
         
         return self.workflow_data
     
+    def enable_load_image_nodes(self, image_count: int, node_ids: List[str] = None):
+        """根据图片数量动态启用 LoadImage 节点
+        
+        Args:
+            image_count: 传入的图片数量
+            node_ids: LoadImage 节点 ID 列表，按顺序对应 image1, image2, image3
+                     如果不传，会自动从工作流中找到所有 LoadImage 节点
+        """
+        if not self.raw_data or self.is_api_format:
+            return  # API 格式工作流没有 mode 字段
+        
+        nodes = self.raw_data.get("nodes", [])
+        
+        # 找到所有 LoadImage 节点
+        load_image_nodes = []
+        for node in nodes:
+            if node.get("type") == "LoadImage":
+                load_image_nodes.append(node)
+        
+        # 按 ID 排序（假设小 ID 的节点对应 image1, image2, image3）
+        load_image_nodes.sort(key=lambda n: n.get("id", 0))
+        
+        # 启用前 N 个节点（N = image_count），禁用其余的
+        for i, node in enumerate(load_image_nodes):
+            if i < image_count:
+                node["mode"] = 0  # 启用
+                print(f"启用 LoadImage 节点 ID={node.get('id')}")
+            else:
+                node["mode"] = 4  # bypass
+                print(f"禁用 LoadImage 节点 ID={node.get('id')}")
+        
+        # 重新转换
+        self.workflow_data = self._convert_to_api_format(self.raw_data)
+    
     def _is_api_format(self, data: Dict) -> bool:
         """判断是否是 API 格式"""
         # API 格式: 字典的 key 是节点 ID（字符串数字），value 包含 class_type
@@ -710,12 +744,18 @@ class WorkflowParser:
         for node in nodes:
             node_id = str(node.get("id"))
             node_type = node.get("type")
+            node_mode = node.get("mode", 0)  # 0=正常, 2=muted, 4=bypass
             
             if not node_type:
                 continue
             
             # 跳过 Reroute 和 Note 等辅助节点
             if node_type in ("Reroute", "Note", "PrimitiveNode"):
+                continue
+            
+            # 跳过被禁用的节点 (mode != 0)
+            if node_mode != 0:
+                print(f"跳过被禁用的节点: {node_type} (ID: {node_id}, mode: {node_mode})")
                 continue
             
             inputs = {}
@@ -1058,6 +1098,12 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
         # 解析工作流（需要转成 API 格式）
         parser = WorkflowParser(workflow_path)
         parser.load()
+        
+        # 根据图片数量动态启用 LoadImage 节点
+        image_count = len(images_param)
+        if image_count > 0:
+            parser.enable_load_image_nodes(image_count)
+        
         workflow_data = parser.workflow_data
         
         # 应用用户参数到工作流

@@ -926,6 +926,19 @@ class WorkflowExecutor:
                     else:
                         inputs[key] = value
                 
+                # 检查函数是否需要额外参数（如 unique_id）
+                import inspect
+                sig = inspect.signature(func)
+                func_params = sig.parameters
+                
+                # 添加必要的额外参数
+                if 'unique_id' in func_params:
+                    inputs['unique_id'] = str(node_id)  # 必须是字符串
+                if 'prompt' in func_params and 'prompt' not in inputs:
+                    inputs['prompt'] = {}
+                if 'extra_pnginfo' in func_params and 'extra_pnginfo' not in inputs:
+                    inputs['extra_pnginfo'] = {}
+                
                 # 执行节点
                 try:
                     result = func(**inputs)

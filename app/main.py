@@ -1133,9 +1133,8 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
             execute_outputs=output_node_ids
         )
         
-        # 获取执行结果
-        history = prompt_executor.history.get(prompt_id, {})
-        outputs = history.get("outputs", {})
+        # 获取执行结果（history_result 在执行后被设置）
+        outputs = getattr(prompt_executor, 'history_result', {}).get("outputs", {})
         
         # 提取输出文件
         output_files = []

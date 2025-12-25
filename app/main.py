@@ -444,29 +444,165 @@ async def initialize_comfyui():
     if _comfyui_initialized:
         return NODE_CLASS_MAPPINGS
     
-    add_comfyui_to_path()
+    comfyui_path = add_comfyui_to_path()
     
-    # 保存原始 argv
+    # 保存原始状态
     original_argv = sys.argv.copy()
+    original_cwd = os.getcwd()
+    original_path = sys.path.copy()
     saved_app_module = sys.modules.pop("app", None)
     
+    # 清除可能冲突的模块缓存
+    modules_to_remove = [key for key in sys.modules.keys() if key.startswith('utils') or key == 'server']
+    for mod in modules_to_remove:
+        sys.modules.pop(mod, None)
+    
     try:
+        # 切换到 ComfyUI 目录
+        os.chdir(comfyui_path)
         sys.argv = [sys.argv[0]]
         
+        # 重置 sys.path，确保 ComfyUI 路径优先
+        # 只保留标准库和 site-packages，然后把 ComfyUI 放最前面
+        sys.path = [comfyui_path] + [p for p in original_path if 
+                                      'site-packages' in p or 
+                                      'lib/python' in p or
+                                      p == '' or
+                                      p.startswith('/root/miniconda') or
+                                      p.startswith('/usr/lib')]
+        
+        # DEBUG: 打印调试信息
+        print("=" * 60)
+        print("[DEBUG] ComfyUI 初始化")
+        print(f"[DEBUG] comfyui_path: {comfyui_path}")
+        print(f"[DEBUG] cwd: {os.getcwd()}")
+        print(f"[DEBUG] sys.path:")
+        for i, p in enumerate(sys.path[:10]):
+            print(f"  [{i}] {p}")
+        
+        # 检查 utils 目录/文件
+        import glob
+        utils_files = glob.glob(os.path.join(comfyui_path, "utils*"))
+        print(f"[DEBUG] ComfyUI utils 目录内容: {utils_files}")
+        
+        # 检查 utils 模块位置
+        for p in sys.path[:5]:
+            utils_py = os.path.join(p, "utils.py")
+            utils_dir = os.path.join(p, "utils")
+            if os.path.exists(utils_py):
+                print(f"[DEBUG] 发现 utils.py: {utils_py}")
+            if os.path.isdir(utils_dir):
+                print(f"[DEBUG] 发现 utils/: {utils_dir}")
+        print("=" * 60)
+        
         # 加载额外模型路径
-        from comfy.options import enable_args_parsing
-        enable_args_parsing()
+        try:
+            print("[DEBUG] 尝试导入 comfy.options...")
+            from comfy.options import enable_args_parsing
+            print("[DEBUG] comfy.options 导入成功")
+            enable_args_parsing()
+            print("[DEBUG] enable_args_parsing() 调用成功")
+        except Exception as e:
+            import traceback
+            print(f"[ERROR] comfy.options 导入失败: {e}")
+            traceback.print_exc()
+            raise
         
         extra_model_paths = config.get("comfyui", {}).get("extra_model_paths")
         if extra_model_paths and os.path.exists(extra_model_paths):
-            from utils.extra_config import load_extra_path_config
-            load_extra_path_config(extra_model_paths)
+            try:
+                print(f"[DEBUG] 尝试导入 utils.extra_config...")
+                from utils.extra_config import load_extra_path_config
+                print("[DEBUG] utils.extra_config 导入成功")
+                load_extra_path_config(extra_model_paths)
+            except Exception as e:
+                import traceback
+                print(f"[ERROR] utils.extra_config 导入失败: {e}")
+                traceback.print_exc()
+                raise
         
         # 初始化自定义节点
-        import asyncio
-        import execution
-        import server
-        from nodes import init_extra_nodes, NODE_CLASS_MAPPINGS as mappings
+        try:
+            print("[DEBUG] 尝试导入 ComfyUI 核心模块...")
+            import asyncio
+            import execution
+            print("[DEBUG] execution 导入成功")
+            
+            # 在导入 server 之前，再次清理可能冲突的模块缓存
+            # 因为 execution 导入过程中可能加载了其他模块
+            modules_to_clean = [key for key in list(sys.modules.keys()) 
+                               if key == 'utils' or key.startswith('utils.') 
+                               or key == 'app' or key.startswith('app.')]
+            for mod in modules_to_clean:
+                sys.modules.pop(mod, None)
+            print(f"[DEBUG] 清理了 {len(modules_to_clean)} 个可能冲突的模块: {modules_to_clean[:5]}...")
+            
+            # 详细调试 utils 模块的查找位置
+            print("[DEBUG] === 开始诊断 utils 模块 ===")
+            import importlib.util
+            spec = importlib.util.find_spec('utils')
+            if spec:
+                print(f"[DEBUG] find_spec('utils') 找到: {spec.origin}")
+                print(f"[DEBUG] spec.submodule_search_locations: {spec.submodule_search_locations}")
+            else:
+                print("[DEBUG] find_spec('utils') 返回 None")
+            
+            # 检查 site-packages 中的 utils
+            for p in sys.path:
+                if 'site-packages' in p:
+                    utils_py = os.path.join(p, 'utils.py')
+                    utils_dir = os.path.join(p, 'utils')
+                    if os.path.exists(utils_py):
+                        print(f"[WARNING] 发现冲突的 utils.py: {utils_py}")
+                    if os.path.isdir(utils_dir):
+                        print(f"[DEBUG] site-packages 中的 utils/: {utils_dir}")
+            
+            # 检查 ComfyUI utils 目录结构
+            comfyui_utils = os.path.join(comfyui_path, 'utils')
+            if os.path.isdir(comfyui_utils):
+                print(f"[DEBUG] ComfyUI utils 目录存在: {comfyui_utils}")
+                init_file = os.path.join(comfyui_utils, '__init__.py')
+                if os.path.exists(init_file):
+                    print(f"[DEBUG] __init__.py 存在")
+                else:
+                    print(f"[WARNING] __init__.py 不存在! 这可能是问题所在")
+                # 列出 utils 目录内容
+                utils_contents = os.listdir(comfyui_utils)
+                print(f"[DEBUG] utils 目录内容: {utils_contents[:10]}")
+            
+            print("[DEBUG] === 诊断结束 ===")
+            
+            # 关键修复：手动预先导入 ComfyUI 的 utils 包
+            # 因为 comfy/utils.py 会被误认为是 utils 模块
+            print("[DEBUG] 手动预导入 ComfyUI utils 包...")
+            import importlib.util
+            utils_init = os.path.join(comfyui_path, 'utils', '__init__.py')
+            if os.path.exists(utils_init):
+                spec = importlib.util.spec_from_file_location('utils', utils_init,
+                    submodule_search_locations=[os.path.join(comfyui_path, 'utils')])
+                utils_module = importlib.util.module_from_spec(spec)
+                sys.modules['utils'] = utils_module
+                spec.loader.exec_module(utils_module)
+                print(f"[DEBUG] utils 包已预导入: {utils_module}")
+                
+                # 同时预导入 utils.install_util
+                install_util_path = os.path.join(comfyui_path, 'utils', 'install_util.py')
+                if os.path.exists(install_util_path):
+                    spec2 = importlib.util.spec_from_file_location('utils.install_util', install_util_path)
+                    install_util_module = importlib.util.module_from_spec(spec2)
+                    sys.modules['utils.install_util'] = install_util_module
+                    spec2.loader.exec_module(install_util_module)
+                    print(f"[DEBUG] utils.install_util 已预导入")
+            
+            import server
+            print("[DEBUG] server 导入成功")
+            from nodes import init_extra_nodes, NODE_CLASS_MAPPINGS as mappings
+            print("[DEBUG] nodes 导入成功")
+        except Exception as e:
+            import traceback
+            print(f"[ERROR] ComfyUI 核心模块导入失败: {e}")
+            traceback.print_exc()
+            raise
         
         loop = asyncio.get_event_loop()
         server_instance = server.PromptServer(loop)
@@ -480,6 +616,8 @@ async def initialize_comfyui():
         return NODE_CLASS_MAPPINGS
         
     finally:
+        os.chdir(original_cwd)
+        sys.path = original_path
         sys.argv = original_argv
         if saved_app_module is not None:
             sys.modules["app"] = saved_app_module

@@ -790,6 +790,7 @@ class WorkflowParser:
                     widget_input_names.append(inp.get("name"))
             
             # 按顺序分配 widgets_values 到 widget 输入
+            widget_idx = 0
             for i, inp_name in enumerate(widget_input_names):
                 if i >= len(widgets_values):
                     break
@@ -797,8 +798,36 @@ class WorkflowParser:
                 if inp_name in inputs:
                     continue
                 value = widgets_values[i]
+                widget_idx = i + 1
                 if value is not None:
                     inputs[inp_name] = value
+            
+            # 如果 inputs 数组中没有 widget 定义，但有 widgets_values
+            # 需要从 NODE_CLASS_MAPPINGS 获取参数定义
+            if not widget_input_names and widgets_values and NODE_CLASS_MAPPINGS and node_type in NODE_CLASS_MAPPINGS:
+                try:
+                    node_class = NODE_CLASS_MAPPINGS[node_type]
+                    input_types = node_class.INPUT_TYPES()
+                    
+                    # 收集所有需要 widget 值的输入
+                    widget_params = []
+                    for category in ["required", "optional"]:
+                        for inp_name, inp_spec in input_types.get(category, {}).items():
+                            if inp_name in inputs:
+                                continue
+                            if isinstance(inp_spec, tuple) and len(inp_spec) > 0:
+                                inp_type = inp_spec[0]
+                                if isinstance(inp_type, list) or inp_type in ("STRING", "INT", "FLOAT", "BOOLEAN"):
+                                    widget_params.append(inp_name)
+                    
+                    # 按顺序分配
+                    for i, inp_name in enumerate(widget_params):
+                        if i < len(widgets_values):
+                            value = widgets_values[i]
+                            if value is not None:
+                                inputs[inp_name] = value
+                except Exception as e:
+                    print(f"解析节点 {node_type} 输入时出错: {e}")
             
             api_data[node_id] = {
                 "class_type": node_type,

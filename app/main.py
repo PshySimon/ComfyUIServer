@@ -781,36 +781,61 @@ class WorkflowParser:
                     from_node, from_slot = link_map[link_id]
                     inputs[inp_name] = [str(from_node), from_slot]
             
-            # 从工作流 JSON 中提取 widget 输入的顺序
-            # widgets_values 包含所有 widget 输入的值，按 inputs 数组中的顺序
-            # 即使某个 widget 输入通过 link 连接，widgets_values 中仍然有它的默认值
-            widget_input_names = []
-            widget_input_types = {}  # 记录每个 widget 输入的类型
-            for inp in node_inputs:
-                if inp.get("widget"):
-                    inp_name = inp.get("name")
-                    widget_input_names.append(inp_name)
-                    widget_input_types[inp_name] = inp.get("type", "STRING")
+            # 某些节点类型有隐藏的 widget 参数（如 KSampler 的 control_after_generate）
+            # 这些参数不在 inputs 数组中，但在 widgets_values 中
+            # 对于这些节点，使用已知的参数顺序
+            known_widget_order = self._get_common_params(node_type)
             
-            # 按顺序分配 widgets_values 到 widget 输入
-            widget_idx = 0
-            for i, inp_name in enumerate(widget_input_names):
-                if i >= len(widgets_values):
-                    break
-                # 如果这个输入已经通过连接设置了，跳过赋值但不跳过索引
-                if inp_name in inputs:
-                    continue
-                value = widgets_values[i]
-                widget_idx = i + 1
-                if value is not None:
-                    # 根据类型进行转换
-                    inp_type = widget_input_types.get(inp_name, "STRING")
-                    value = self._convert_value_type(value, inp_type)
-                    inputs[inp_name] = value
+            if known_widget_order and widgets_values:
+                # 使用已知的参数顺序
+                for i, param_name in enumerate(known_widget_order):
+                    if i >= len(widgets_values):
+                        break
+                    # 跳过已经通过连接设置的输入
+                    if param_name in inputs:
+                        continue
+                    # 跳过 control_after_generate 等控制参数（不需要传给节点）
+                    if param_name in ("control_after_generate",):
+                        continue
+                    value = widgets_values[i]
+                    if value is not None:
+                        # 根据参数名推断类型
+                        if param_name in ("seed", "steps", "width", "height", "batch_size", "start_at_step", "end_at_step"):
+                            value = self._convert_value_type(value, "INT")
+                        elif param_name in ("cfg", "denoise", "strength"):
+                            value = self._convert_value_type(value, "FLOAT")
+                        elif param_name in ("add_noise", "return_with_leftover_noise"):
+                            value = self._convert_value_type(value, "BOOLEAN")
+                        inputs[param_name] = value
+            else:
+                # 从工作流 JSON 中提取 widget 输入的顺序
+                # widgets_values 包含所有 widget 输入的值，按 inputs 数组中的顺序
+                # 即使某个 widget 输入通过 link 连接，widgets_values 中仍然有它的默认值
+                widget_input_names = []
+                widget_input_types = {}  # 记录每个 widget 输入的类型
+                for inp in node_inputs:
+                    if inp.get("widget"):
+                        inp_name = inp.get("name")
+                        widget_input_names.append(inp_name)
+                        widget_input_types[inp_name] = inp.get("type", "STRING")
+                
+                # 按顺序分配 widgets_values 到 widget 输入
+                for i, inp_name in enumerate(widget_input_names):
+                    if i >= len(widgets_values):
+                        break
+                    # 如果这个输入已经通过连接设置了，跳过赋值但不跳过索引
+                    if inp_name in inputs:
+                        continue
+                    value = widgets_values[i]
+                    if value is not None:
+                        # 根据类型进行转换
+                        inp_type = widget_input_types.get(inp_name, "STRING")
+                        value = self._convert_value_type(value, inp_type)
+                        inputs[inp_name] = value
             
             # 如果 inputs 数组中没有 widget 定义，但有 widgets_values
             # 需要从 NODE_CLASS_MAPPINGS 获取参数定义
-            if not widget_input_names and widgets_values and NODE_CLASS_MAPPINGS and node_type in NODE_CLASS_MAPPINGS:
+            if not known_widget_order and widgets_values and NODE_CLASS_MAPPINGS and node_type in NODE_CLASS_MAPPINGS:
                 try:
                     node_class = NODE_CLASS_MAPPINGS[node_type]
                     input_types = node_class.INPUT_TYPES()

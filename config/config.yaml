@@ -116,6 +116,7 @@ workflows:
       image2: "image_2"             # 第二张图片（可选）
       image3: "image_3"             # 第三张图片（可选）
       positive_prompt: "text_39"    # 提示词
+      use_custom_size: "use_custom_size_34"  # 是否使用自定义尺寸
       width: "custom_width_34"      # 输出宽度
       height: "custom_height_34"    # 输出高度
       seed: "seed_10"               # 随机种子

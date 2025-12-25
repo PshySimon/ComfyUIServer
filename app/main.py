@@ -1708,6 +1708,14 @@ async def image_to_image(request: ImageToImageRequest):
         else:
             params[param_name] = param_value
     
+    # 如果传入了自定义宽高，自动启用 use_custom_size
+    if "use_custom_size" in input_mapping:
+        # 检查是否传入了非默认的宽高
+        if request.width != 1024 or request.height != 1024:
+            params[input_mapping["use_custom_size"]] = True
+        else:
+            params[input_mapping["use_custom_size"]] = False
+    
     # 映射图片（image1 -> image_1, image2 -> image_2, ...）
     for i, img in enumerate(images, 1):
         key = f"image{i}"

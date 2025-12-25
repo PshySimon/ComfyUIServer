@@ -785,9 +785,12 @@ class WorkflowParser:
             # widgets_values 包含所有 widget 输入的值，按 inputs 数组中的顺序
             # 即使某个 widget 输入通过 link 连接，widgets_values 中仍然有它的默认值
             widget_input_names = []
+            widget_input_types = {}  # 记录每个 widget 输入的类型
             for inp in node_inputs:
                 if inp.get("widget"):
-                    widget_input_names.append(inp.get("name"))
+                    inp_name = inp.get("name")
+                    widget_input_names.append(inp_name)
+                    widget_input_types[inp_name] = inp.get("type", "STRING")
             
             # 按顺序分配 widgets_values 到 widget 输入
             widget_idx = 0
@@ -800,6 +803,9 @@ class WorkflowParser:
                 value = widgets_values[i]
                 widget_idx = i + 1
                 if value is not None:
+                    # 根据类型进行转换
+                    inp_type = widget_input_types.get(inp_name, "STRING")
+                    value = self._convert_value_type(value, inp_type)
                     inputs[inp_name] = value
             
             # 如果 inputs 数组中没有 widget 定义，但有 widgets_values
@@ -838,6 +844,38 @@ class WorkflowParser:
             }
         
         return api_data
+    
+    def _convert_value_type(self, value: Any, inp_type: str) -> Any:
+        """根据输入类型转换值的类型"""
+        if value is None:
+            return value
+        
+        try:
+            if inp_type == "INT":
+                if isinstance(value, (int, float)):
+                    return int(value)
+                if isinstance(value, str) and value.replace("-", "").isdigit():
+                    return int(value)
+            elif inp_type == "FLOAT":
+                if isinstance(value, (int, float)):
+                    return float(value)
+                if isinstance(value, str):
+                    try:
+                        return float(value)
+                    except ValueError:
+                        pass
+            elif inp_type == "BOOLEAN":
+                if isinstance(value, bool):
+                    return value
+                if isinstance(value, str):
+                    return value.lower() in ("true", "1", "yes")
+                if isinstance(value, (int, float)):
+                    return bool(value)
+            # STRING 和 COMBO 类型保持原样
+        except (ValueError, TypeError):
+            pass
+        
+        return value
     
     def _fill_inputs_generic(self, node: Dict, inputs: Dict, widgets_values: List):
         """通用方式填充输入（当没有节点定义时使用）"""

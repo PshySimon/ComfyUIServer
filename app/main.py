@@ -1242,15 +1242,31 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
             if class_type in ("SaveImage", "PreviewImage", "VHS_VideoCombine"):
                 output_node_ids.append(node_id)
         
-        # 直接执行（执行器内部会验证）
+        print(f"[DEBUG] 准备执行工作流，output_node_ids: {output_node_ids}")
+        print(f"[DEBUG] workflow_data 节点数: {len(workflow_data)}")
+        
+        # 打印工作流数据用于调试
+        import sys
+        sys.stdout.flush()
         
         # 执行
-        prompt_executor.execute(
-            workflow_data,
-            prompt_id,
-            extra_data={"extra_pnginfo": {"workflow": workflow_data}},
-            execute_outputs=output_node_ids
-        )
+        try:
+            print("[DEBUG] 开始执行 prompt_executor.execute...")
+            sys.stdout.flush()
+            prompt_executor.execute(
+                workflow_data,
+                prompt_id,
+                extra_data={"extra_pnginfo": {"workflow": workflow_data}},
+                execute_outputs=output_node_ids
+            )
+            print("[DEBUG] prompt_executor.execute 完成")
+            sys.stdout.flush()
+        except Exception as exec_error:
+            print(f"[ERROR] prompt_executor.execute 失败: {exec_error}")
+            import traceback
+            traceback.print_exc()
+            sys.stdout.flush()
+            raise
         
         # 获取执行结果（history_result 在执行后被设置）
         outputs = getattr(prompt_executor, 'history_result', {}).get("outputs", {})

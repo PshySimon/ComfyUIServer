@@ -215,11 +215,10 @@ def process_image_input(value: Any) -> str:
 
 
 def generate_output_url(filename: str, subfolder: str = "") -> str:
-    """生成输出文件的访问 URL"""
-    base_url = config.get("comfyui", {}).get("base_url", "http://localhost:6006")
+    """生成输出文件的相对路径"""
     if subfolder:
-        return f"{base_url}/output/{subfolder}/{filename}"
-    return f"{base_url}/output/{filename}"
+        return f"/output/{subfolder}/{filename}"
+    return f"/output/{filename}"
 
 # ============================================================================
 # 任务管理

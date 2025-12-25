@@ -1016,7 +1016,7 @@ async def upload_image(file: UploadFile = File(...)):
 
 
 def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, params: Dict):
-    """在后台线程中执行工作流任务"""
+    """在后台线程中执行工作流任务 - 使用 ComfyUI-SaveAsScript 官方方式"""
     try:
         task_manager.update_task(task_id, status=TaskStatus.PROCESSING)
         
@@ -1032,10 +1032,9 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
         
         # 处理图片参数（支持 base64 和 URL）
         processed_params = {}
-        images_param = params.pop("_images", {})  # 特殊的图片参数字典
+        images_param = params.pop("_images", {})
         
         for key, value in params.items():
-            # 检查是否是图片类型的参数（以 image 开头或在 images 字典中）
             if key in images_param or (isinstance(value, str) and (
                 value.startswith("data:image/") or 
                 value.startswith(("http://", "https://")) and any(ext in value.lower() for ext in [".jpg", ".jpeg", ".png", ".gif", ".webp"])
@@ -1056,12 +1055,12 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
                 print(f"处理图片参数 {key} 失败: {e}")
                 processed_params[key] = value
         
-        # 解析工作流
+        # 解析工作流（需要转成 API 格式）
         parser = WorkflowParser(workflow_path)
         parser.load()
+        workflow_data = parser.workflow_data
         
-        # 应用用户参数到工作流数据
-        workflow_data = parser.workflow_data.copy()
+        # 应用用户参数到工作流
         for node_id, node_data in workflow_data.items():
             if "inputs" not in node_data:
                 continue
@@ -1070,28 +1069,34 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
                 if param_name in processed_params:
                     node_data["inputs"][key] = processed_params[param_name]
         
-        # 使用 ComfyUI 原生执行器
+        # 使用 ComfyUI 原生 PromptExecutor 执行
         import execution
-        import uuid
+        import server
         
-        prompt_id = str(uuid.uuid4())
+        # 获取 PromptServer 实例（ComfyUI 初始化时已创建）
+        prompt_server = server.PromptServer.instance
         
-        # 创建 PromptExecutor
-        prompt_executor = execution.PromptExecutor(None)
+        # 创建执行器
+        prompt_executor = execution.PromptExecutor(prompt_server)
         
         # 执行工作流
+        prompt_id = task_id
         output_node_ids = []
         for node_id, node_data in workflow_data.items():
             class_type = node_data.get("class_type", "")
-            # 找到输出节点
             if class_type in ("SaveImage", "PreviewImage", "VHS_VideoCombine"):
                 output_node_ids.append(node_id)
         
-        # ComfyUI 执行
+        # 验证 prompt
+        valid = execution.validate_prompt(workflow_data)
+        if not valid[0]:
+            raise ValueError(f"工作流验证失败: {valid[1]}")
+        
+        # 执行
         prompt_executor.execute(
             workflow_data,
             prompt_id,
-            extra_data={},
+            extra_data={"extra_pnginfo": {"workflow": workflow_data}},
             execute_outputs=output_node_ids
         )
         
@@ -1099,7 +1104,7 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
         history = prompt_executor.history.get(prompt_id, {})
         outputs = history.get("outputs", {})
         
-        # 提取输出结果并生成 URL
+        # 提取输出文件
         output_files = []
         output_results = {}
         
@@ -1107,7 +1112,6 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
             if ui_result:
                 output_results[node_id] = ui_result
                 
-                # 提取图片文件
                 if "images" in ui_result:
                     for img in ui_result["images"]:
                         filename = img.get("filename", "")
@@ -1118,7 +1122,6 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
                             "url": generate_output_url(filename, subfolder)
                         })
                 
-                # 提取视频/GIF 文件
                 if "gifs" in ui_result:
                     for gif in ui_result["gifs"]:
                         filename = gif.get("filename", "")
@@ -1135,8 +1138,8 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
             result={
                 "files": output_files,
                 "outputs": output_results,
-                "image_urls": [f for f in output_files if f["type"] == "image"],
-                "video_urls": [f for f in output_files if f["type"] == "video"],
+                "image_urls": [f["url"] for f in output_files if f["type"] == "image"],
+                "video_urls": [f["url"] for f in output_files if f["type"] == "video"],
             }
         )
         

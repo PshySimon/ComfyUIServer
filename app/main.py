@@ -1096,12 +1096,14 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
         workflow_data = parser.workflow_data
         
         # 应用用户参数到工作流
+        print(f"[DEBUG] processed_params keys: {list(processed_params.keys())}")
         for node_id, node_data in workflow_data.items():
             if "inputs" not in node_data:
                 continue
             for key in node_data["inputs"]:
                 param_name = f"{key}_{node_id}"
                 if param_name in processed_params:
+                    print(f"[DEBUG] 覆盖参数: {param_name} -> {processed_params[param_name][:50] if isinstance(processed_params[param_name], str) else processed_params[param_name]}...")
                     node_data["inputs"][key] = processed_params[param_name]
         
         # 使用 ComfyUI 原生 PromptExecutor 执行

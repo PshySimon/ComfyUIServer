@@ -1424,6 +1424,102 @@ async def download_output(file_path: str):
 
 
 # ============================================================================
+# 图生图 / 图生视频 接口
+# ============================================================================
+
+class ImageToImageRequest(BaseModel):
+    """图生图请求"""
+    images: List[str] = Field(..., description="输入图片列表（base64编码），支持1-3张")
+    positive_prompt: str = Field(default="", description="正向提示词")
+
+
+class ImageToVideoRequest(BaseModel):
+    """图生视频请求"""
+    images: List[str] = Field(..., description="输入图片列表（base64编码）")
+    positive_prompt: str = Field(default="", description="正向提示词")
+
+
+@app.post("/image-to-image", response_model=TaskResponse)
+async def image_to_image(request: ImageToImageRequest):
+    """图生图接口，支持1-3张图片"""
+    if not registered_workflows:
+        raise HTTPException(status_code=404, detail="没有配置任何工作流")
+    
+    if not request.images or len(request.images) > 3:
+        raise HTTPException(status_code=400, detail="请提供1-3张图片")
+    
+    workflow_name = next(iter(registered_workflows))
+    wf = registered_workflows[workflow_name]
+    input_mapping = wf.get("input_mapping", {})
+    
+    # 构建参数（使用 input_mapping 转换为工作流节点参数名）
+    params = {}
+    
+    # 映射提示词
+    if "positive_prompt" in input_mapping:
+        params[input_mapping["positive_prompt"]] = request.positive_prompt
+    else:
+        params["positive_prompt"] = request.positive_prompt
+    
+    # 映射图片（image1 -> image_1, image2 -> image_2, ...）
+    for i, img in enumerate(request.images, 1):
+        key = f"image{i}"
+        if key in input_mapping:
+            params[input_mapping[key]] = img  # 传原始 base64，让工作流执行器处理
+        else:
+            params[key] = img
+    
+    task_id = task_manager.create_task(workflow_name, params)
+    task_queue.put((task_id, workflow_name, wf["path"], params))
+    
+    return TaskResponse(
+        task_id=task_id,
+        status=TaskStatus.QUEUED.value,
+        message=f"任务已加入队列"
+    )
+
+
+@app.post("/image-to-video", response_model=TaskResponse)
+async def image_to_video(request: ImageToVideoRequest):
+    """图生视频接口"""
+    if not registered_workflows:
+        raise HTTPException(status_code=404, detail="没有配置任何工作流")
+    
+    if not request.images:
+        raise HTTPException(status_code=400, detail="请提供图片")
+    
+    workflow_name = next(iter(registered_workflows))
+    wf = registered_workflows[workflow_name]
+    input_mapping = wf.get("input_mapping", {})
+    
+    # 构建参数
+    params = {}
+    
+    # 映射提示词
+    if "positive_prompt" in input_mapping:
+        params[input_mapping["positive_prompt"]] = request.positive_prompt
+    else:
+        params["positive_prompt"] = request.positive_prompt
+    
+    # 映射图片
+    for i, img in enumerate(request.images, 1):
+        key = f"image{i}"
+        if key in input_mapping:
+            params[input_mapping[key]] = img
+        else:
+            params[key] = img
+    
+    task_id = task_manager.create_task(workflow_name, params)
+    task_queue.put((task_id, workflow_name, wf["path"], params))
+    
+    return TaskResponse(
+        task_id=task_id,
+        status=TaskStatus.QUEUED.value,
+        message=f"任务已加入队列"
+    )
+
+
+# ============================================================================
 # 主程序入口
 # ============================================================================
 

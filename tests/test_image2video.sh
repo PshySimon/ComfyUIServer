@@ -42,7 +42,7 @@ echo "正在提交任务..."
 RESPONSE=$(curl -s -X POST "$BASE_URL/image-to-video" \
     -H "Content-Type: application/json" \
     -d "{
-        \"image\": \"$IMAGE_BASE64\",
+        \"images\": [\"$IMAGE_BASE64\"],
         \"positive_prompt\": \"橘猫摇了摇头\"
     }")
 

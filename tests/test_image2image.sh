@@ -2,7 +2,7 @@
 
 # 测试脚本：图生图接口
 # Base URL
-BASE_URL=""
+BASE_URL="https://u764-ba4a-97d7d8c3.singapore-a.gpuhub.com:8443"
 
 # 图片文件
 IMAGE_FILE="橘猫.jpg"
@@ -42,7 +42,7 @@ echo "正在提交任务..."
 RESPONSE=$(curl -s -X POST "$BASE_URL/image-to-image" \
     -H "Content-Type: application/json" \
     -d "{
-        \"image\": \"$IMAGE_BASE64\",
+        \"images\": [\"$IMAGE_BASE64\"],
         \"positive_prompt\": \"橘猫摇了摇头\"
     }")
 

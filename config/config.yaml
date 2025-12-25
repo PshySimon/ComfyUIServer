@@ -112,11 +112,9 @@ workflows:
     path: "workflows/eigen_banana.json"
     description: "Qwen Image Edit - 多图编辑工作流"
     inputs:
-      # 必填：3 张输入图片
-      image1: "image_1"           # 第一张输入图片
-      image2: "image_2"           # 第二张输入图片
-      image3: "image_3"           # 第三张输入图片
-      # 必填：编辑指令
-      prompt: "text_39"           # 例如："去掉蓝色乳胶衣"
+      image1: "image_1"             # 第一张图片
+      image2: "image_2"             # 第二张图片（可选）
+      image3: "image_3"             # 第三张图片（可选）
+      positive_prompt: "text_39"    # 提示词
     outputs:
       image: "PreviewImage"

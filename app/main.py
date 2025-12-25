@@ -1133,10 +1133,7 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
             if class_type in ("SaveImage", "PreviewImage", "VHS_VideoCombine"):
                 output_node_ids.append(node_id)
         
-        # 验证 prompt
-        valid = execution.validate_prompt(workflow_data)
-        if not valid[0]:
-            raise ValueError(f"工作流验证失败: {valid[1]}")
+        # 直接执行（执行器内部会验证）
         
         # 执行
         prompt_executor.execute(

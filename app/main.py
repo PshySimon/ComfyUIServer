@@ -260,14 +260,17 @@ class TaskManager:
             """)
 
     def _load_pending_tasks(self):
-        """启动时加载未完成的任务到队列"""
+        """启动时将未完成的任务标记为失败（服务重启后任务无法恢复）"""
         with self.conn:
-            rows = self.conn.execute(
-                "SELECT task_id FROM workflow_tasks WHERE status IN (?, ?) ORDER BY created_at",
-                (TaskStatus.QUEUED.value, TaskStatus.PROCESSING.value)
-            ).fetchall()
-            for row in rows:
-                self.queue.append(row["task_id"])
+            now = datetime.now().isoformat()
+            result = self.conn.execute(
+                "UPDATE workflow_tasks SET status = ?, error_text = ?, updated_at = ? "
+                "WHERE status IN (?, ?)",
+                (TaskStatus.FAILED.value, "服务重启，任务已取消", now,
+                 TaskStatus.QUEUED.value, TaskStatus.PROCESSING.value)
+            )
+            if result.rowcount > 0:
+                print(f"已将 {result.rowcount} 个未完成任务标记为失败")
 
     def create_task(self, workflow_name: str, request_data: dict) -> str:
         task_id = str(uuid.uuid4())

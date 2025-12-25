@@ -84,16 +84,17 @@ def get_output_directory() -> Path:
     return result
 
 
-def save_base64_image(base64_str: str, prefix: str = "upload") -> str:
+def save_base64_image(base64_str: str, prefix: str = "upload", subfolder: str = "pasted") -> str:
     """
     保存 base64 编码的图片到 ComfyUI input 目录
     
     Args:
         base64_str: base64 编码的图片（可以带 data:image/xxx;base64, 前缀）
         prefix: 文件名前缀
+        subfolder: 子目录名称，默认为 "pasted"（ComfyUI 粘贴图片的默认目录）
     
     Returns:
-        保存后的文件名
+        保存后的文件路径（包含子目录，如 "pasted/xxx.png"）
     """
     # 移除 data URL 前缀
     if ";base64," in base64_str:
@@ -105,9 +106,8 @@ def save_base64_image(base64_str: str, prefix: str = "upload") -> str:
     except Exception as e:
         raise ValueError(f"无效的 base64 编码: {e}")
     
-    # 生成唯一文件名
-    file_hash = hashlib.md5(image_data).hexdigest()[:8]
-    timestamp = int(time.time() * 1000)
+    # 使用内容 hash 作为文件名（与 ComfyUI 保持一致）
+    file_hash = hashlib.sha256(image_data).hexdigest()
     
     # 检测图片格式
     if image_data[:8] == b'\x89PNG\r\n\x1a\n':
@@ -121,27 +121,32 @@ def save_base64_image(base64_str: str, prefix: str = "upload") -> str:
     else:
         ext = "png"  # 默认
     
-    filename = f"{prefix}_{timestamp}_{file_hash}.{ext}"
+    filename = f"{file_hash}.{ext}"
     
-    # 保存文件
+    # 保存文件到子目录
     input_dir = get_input_directory()
-    filepath = input_dir / filename
+    save_dir = input_dir / subfolder
+    save_dir.mkdir(parents=True, exist_ok=True)
+    
+    filepath = save_dir / filename
     with open(filepath, "wb") as f:
         f.write(image_data)
     
-    return filename
+    # 返回包含子目录的相对路径
+    return f"{subfolder}/{filename}"
 
 
-def download_image_from_url(url: str, prefix: str = "download") -> str:
+def download_image_from_url(url: str, prefix: str = "download", subfolder: str = "pasted") -> str:
     """
     从 URL 下载图片到 ComfyUI input 目录
     
     Args:
         url: 图片 URL
-        prefix: 文件名前缀
+        prefix: 文件名前缀（未使用，保留兼容性）
+        subfolder: 子目录名称，默认为 "pasted"
     
     Returns:
-        保存后的文件名
+        保存后的文件路径（包含子目录，如 "pasted/xxx.png"）
     """
     try:
         # 下载图片
@@ -155,21 +160,26 @@ def download_image_from_url(url: str, prefix: str = "download") -> str:
     url_path = url.split("?")[0]
     if url_path.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
         ext = url_path.rsplit(".", 1)[-1]
+        if ext == "jpeg":
+            ext = "jpg"
     else:
         ext = "png"
     
-    # 生成唯一文件名
-    file_hash = hashlib.md5(image_data).hexdigest()[:8]
-    timestamp = int(time.time() * 1000)
-    filename = f"{prefix}_{timestamp}_{file_hash}.{ext}"
+    # 使用内容 hash 作为文件名
+    file_hash = hashlib.sha256(image_data).hexdigest()
+    filename = f"{file_hash}.{ext}"
     
-    # 保存文件
+    # 保存文件到子目录
     input_dir = get_input_directory()
-    filepath = input_dir / filename
+    save_dir = input_dir / subfolder
+    save_dir.mkdir(parents=True, exist_ok=True)
+    
+    filepath = save_dir / filename
     with open(filepath, "wb") as f:
         f.write(image_data)
     
-    return filename
+    # 返回包含子目录的相对路径
+    return f"{subfolder}/{filename}"
 
 
 def process_image_input(value: Any) -> str:
@@ -178,12 +188,12 @@ def process_image_input(value: Any) -> str:
     
     Args:
         value: 可以是以下格式之一：
-            - 文件名字符串 (已存在于 input 目录)
+            - 文件名字符串 (已存在于 input 目录，如 "pasted/xxx.png")
             - base64 编码的图片
             - 图片 URL
     
     Returns:
-        ComfyUI input 目录中的文件名
+        ComfyUI input 目录中的文件路径（如 "pasted/xxx.png"）
     """
     if not isinstance(value, str):
         raise ValueError(f"图片输入必须是字符串: {type(value)}")
@@ -196,7 +206,7 @@ def process_image_input(value: Any) -> str:
     if value.startswith(("http://", "https://")):
         return download_image_from_url(value)
     
-    # 假设是已存在的文件名
+    # 假设是已存在的文件名（可能包含子目录如 "pasted/xxx.png"）
     input_dir = get_input_directory()
     if (input_dir / value).exists():
         return value

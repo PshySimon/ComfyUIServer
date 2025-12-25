@@ -1126,6 +1126,22 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
                     print(f"[DEBUG] 覆盖参数: {param_name} | {old_value} -> {new_value}")
                     node_data["inputs"][key] = new_value
         
+        # 处理未被覆盖的 LoadImage 节点：
+        # 如果用户只传了部分图片，需要从工作流中移除未使用的 LoadImage 节点
+        # 否则 ComfyUI 会尝试加载工作流中写死的旧图片路径
+        nodes_to_remove = []
+        for node_id, node_data in workflow_data.items():
+            if node_data.get("class_type") == "LoadImage":
+                image_param = f"image_{node_id}"
+                if image_param not in processed_params:
+                    # 这个 LoadImage 节点没有被用户参数覆盖，需要移除
+                    nodes_to_remove.append(node_id)
+                    print(f"[DEBUG] 移除未使用的 LoadImage 节点 {node_id}")
+        
+        # 移除未使用的节点
+        for node_id in nodes_to_remove:
+            del workflow_data[node_id]
+        
         # 再次打印 LoadImage 节点确认覆盖结果
         for node_id, node_data in workflow_data.items():
             if node_data.get("class_type") == "LoadImage":

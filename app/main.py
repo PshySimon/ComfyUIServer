@@ -781,42 +781,46 @@ class WorkflowParser:
                     from_node, from_slot = link_map[link_id]
                     inputs[inp_name] = [str(from_node), from_slot]
             
-            # 尝试从 NODE_CLASS_MAPPINGS 获取节点输入定义
-            # 然后用 widgets_values 填充
-            if NODE_CLASS_MAPPINGS and node_type in NODE_CLASS_MAPPINGS:
+            # 从工作流 JSON 中提取 widget 输入的顺序
+            # 这比从 NODE_CLASS_MAPPINGS 获取更可靠，因为顺序是确定的
+            widget_input_names = []
+            for inp in node_inputs:
+                if inp.get("widget"):
+                    widget_input_names.append(inp.get("name"))
+            
+            # 按顺序分配 widgets_values 到 widget 输入
+            widget_idx = 0
+            for inp_name in widget_input_names:
+                # 跳过已经通过连接设置的输入
+                if inp_name in inputs:
+                    continue
+                if widget_idx < len(widgets_values):
+                    value = widgets_values[widget_idx]
+                    widget_idx += 1
+                    if value is not None:
+                        inputs[inp_name] = value
+            
+            # 如果还有剩余的 widgets_values，尝试用 NODE_CLASS_MAPPINGS 处理
+            if widget_idx < len(widgets_values) and NODE_CLASS_MAPPINGS and node_type in NODE_CLASS_MAPPINGS:
                 try:
                     node_class = NODE_CLASS_MAPPINGS[node_type]
                     input_types = node_class.INPUT_TYPES()
                     
-                    # 收集所有需要 widget 值的输入
-                    widget_inputs = []
+                    # 收集所有需要 widget 值的输入（排除已处理的）
                     for category in ["required", "optional"]:
                         for inp_name, inp_spec in input_types.get(category, {}).items():
-                            # 跳过已经通过连接设置的输入
                             if inp_name in inputs:
                                 continue
-                            
-                            # 检查这是否是个 widget 输入（非节点连接）
                             if isinstance(inp_spec, tuple) and len(inp_spec) > 0:
                                 inp_type = inp_spec[0]
-                                # 基本类型或枚举列表
                                 if isinstance(inp_type, list) or inp_type in ("STRING", "INT", "FLOAT", "BOOLEAN"):
-                                    widget_inputs.append(inp_name)
-                    
-                    # 按顺序分配 widgets_values
-                    for i, inp_name in enumerate(widget_inputs):
-                        if i < len(widgets_values):
-                            value = widgets_values[i]
-                            # 跳过 None 值
-                            if value is not None:
-                                inputs[inp_name] = value
+                                    if widget_idx < len(widgets_values):
+                                        value = widgets_values[widget_idx]
+                                        widget_idx += 1
+                                        if value is not None:
+                                            inputs[inp_name] = value
                 except Exception as e:
                     print(f"解析节点 {node_type} 输入时出错: {e}")
-                    # 如果无法获取节点定义，尝试使用通用方式
-                    self._fill_inputs_generic(node, inputs, widgets_values)
-            else:
-                # 没有节点定义，使用通用方式
-                self._fill_inputs_generic(node, inputs, widgets_values)
             
             api_data[node_id] = {
                 "class_type": node_type,

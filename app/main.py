@@ -1111,8 +1111,9 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
         # 获取 PromptServer 实例（ComfyUI 初始化时已创建）
         prompt_server = server.PromptServer.instance
         
-        # 创建执行器
-        prompt_executor = execution.PromptExecutor(prompt_server)
+        # 创建执行器（需要传入 cache_args 避免 NoneType 错误）
+        cache_args = {"ram": 0, "vram": 0}  # 默认缓存参数
+        prompt_executor = execution.PromptExecutor(prompt_server, cache_args=cache_args)
         
         # 执行工作流
         prompt_id = task_id

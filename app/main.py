@@ -753,11 +753,6 @@ class WorkflowParser:
             if node_type in ("Reroute", "Note", "PrimitiveNode"):
                 continue
             
-            # 跳过被禁用的节点 (mode != 0)
-            if node_mode != 0:
-                print(f"跳过被禁用的节点: {node_type} (ID: {node_id}, mode: {node_mode})")
-                continue
-            
             inputs = {}
             
             # 处理 widgets_values（静态参数值）
@@ -1098,12 +1093,6 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
         # 解析工作流（需要转成 API 格式）
         parser = WorkflowParser(workflow_path)
         parser.load()
-        
-        # 根据图片数量动态启用 LoadImage 节点
-        image_count = len(images_param)
-        if image_count > 0:
-            parser.enable_load_image_nodes(image_count)
-        
         workflow_data = parser.workflow_data
         
         # 应用用户参数到工作流

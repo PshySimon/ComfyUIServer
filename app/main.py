@@ -1059,29 +1059,51 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
         # 解析工作流
         parser = WorkflowParser(workflow_path)
         parser.load()
-        load_order = parser.determine_load_order()
+        
+        # 应用用户参数到工作流数据
+        workflow_data = parser.workflow_data.copy()
+        for node_id, node_data in workflow_data.items():
+            if "inputs" not in node_data:
+                continue
+            for key in node_data["inputs"]:
+                param_name = f"{key}_{node_id}"
+                if param_name in processed_params:
+                    node_data["inputs"][key] = processed_params[param_name]
+        
+        # 使用 ComfyUI 原生执行器
+        import execution
+        import uuid
+        
+        prompt_id = str(uuid.uuid4())
+        
+        # 创建 PromptExecutor
+        prompt_executor = execution.PromptExecutor(None)
         
         # 执行工作流
-        executor = WorkflowExecutor(NODE_CLASS_MAPPINGS)
-        results = executor.execute(parser.workflow_data, load_order, processed_params)
+        output_node_ids = []
+        for node_id, node_data in workflow_data.items():
+            class_type = node_data.get("class_type", "")
+            # 找到输出节点
+            if class_type in ("SaveImage", "PreviewImage", "VHS_VideoCombine"):
+                output_node_ids.append(node_id)
+        
+        # ComfyUI 执行
+        prompt_executor.execute(
+            workflow_data,
+            prompt_id,
+            extra_data={},
+            execute_outputs=output_node_ids
+        )
+        
+        # 获取执行结果
+        history = prompt_executor.history.get(prompt_id, {})
+        outputs = history.get("outputs", {})
         
         # 提取输出结果并生成 URL
         output_files = []
         output_results = {}
         
-        for node_id, result in results.items():
-            if result is None:
-                continue
-            
-            # 尝试提取 UI 结果（如保存的图片/视频）
-            ui_result = None
-            if isinstance(result, dict) and "ui" in result:
-                ui_result = result["ui"]
-            elif isinstance(result, tuple) and len(result) > 0:
-                first_result = result[0] if result else None
-                if isinstance(first_result, dict) and "ui" in first_result:
-                    ui_result = first_result["ui"]
-            
+        for node_id, ui_result in outputs.items():
             if ui_result:
                 output_results[node_id] = ui_result
                 
@@ -1113,7 +1135,8 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
             result={
                 "files": output_files,
                 "outputs": output_results,
-                "node_count": len(results)
+                "image_urls": [f for f in output_files if f["type"] == "image"],
+                "video_urls": [f for f in output_files if f["type"] == "video"],
             }
         )
         

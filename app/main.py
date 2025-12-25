@@ -1096,6 +1096,7 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
         for key, value in images_param.items():
             try:
                 processed_params[key] = process_image_input(value)
+                print(f"[DEBUG] 处理图片 {key} -> {processed_params[key]}")
             except Exception as e:
                 print(f"处理图片参数 {key} 失败: {e}")
                 processed_params[key] = value
@@ -1107,14 +1108,28 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
         
         # 应用用户参数到工作流
         print(f"[DEBUG] processed_params keys: {list(processed_params.keys())}")
+        print(f"[DEBUG] processed_params: {processed_params}")
+        
+        # 先打印所有 LoadImage 节点的信息
+        for node_id, node_data in workflow_data.items():
+            if node_data.get("class_type") == "LoadImage":
+                print(f"[DEBUG] LoadImage 节点 {node_id}: inputs={node_data.get('inputs', {})}")
+        
         for node_id, node_data in workflow_data.items():
             if "inputs" not in node_data:
                 continue
             for key in node_data["inputs"]:
                 param_name = f"{key}_{node_id}"
                 if param_name in processed_params:
-                    print(f"[DEBUG] 覆盖参数: {param_name} -> {processed_params[param_name][:50] if isinstance(processed_params[param_name], str) else processed_params[param_name]}...")
-                    node_data["inputs"][key] = processed_params[param_name]
+                    old_value = node_data["inputs"][key]
+                    new_value = processed_params[param_name]
+                    print(f"[DEBUG] 覆盖参数: {param_name} | {old_value} -> {new_value}")
+                    node_data["inputs"][key] = new_value
+        
+        # 再次打印 LoadImage 节点确认覆盖结果
+        for node_id, node_data in workflow_data.items():
+            if node_data.get("class_type") == "LoadImage":
+                print(f"[DEBUG] 覆盖后 LoadImage 节点 {node_id}: inputs={node_data.get('inputs', {})}")
         
         # 使用 ComfyUI 原生 PromptExecutor 执行
         import execution

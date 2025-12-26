@@ -122,3 +122,20 @@ workflows:
       megapixels: "megapixels_31"   # 输出图片像素数（默认 1.2）
     outputs:
       image: "SaveImage"
+
+  # Qwen Image Edit 2511-AIO 单输出版本
+  # 只输出 AIO 流结果，禁用官方流
+  - name: "qwen_edit_aio_single"
+    path: "workflows/qwen-edit-aio-multi.json"
+    description: "千问 Qwen Edit 2511-AIO（单输出）"
+    inputs:
+      image1: "image_25"            # 主输入图片
+      image2: "image_24"            # 第二张图片（可选）
+      image3: "image_26"            # 第三张图片（可选）
+      prompt: "prompt_27"           # 编辑提示词
+      seed: "seed_28"               # 随机种子
+      steps: "steps_28"             # 采样步数
+      cfg: "cfg_28"                 # CFG 强度
+      megapixels: "megapixels_31"   # 输出图片像素数（默认 1.2）
+    outputs:
+      image: "SaveImage"

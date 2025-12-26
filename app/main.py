@@ -639,6 +639,13 @@ async def initialize_comfyui():
 # 工作流解析与执行
 # ============================================================================
 
+def normalize_path(value: Any) -> Any:
+    """将 Windows 路径转换为 Unix 路径"""
+    if isinstance(value, str) and '\\' in value:
+        return value.replace('\\', '/')
+    return value
+
+
 class WorkflowParser:
     """工作流解析器 - 支持普通工作流格式和 API 格式
     
@@ -799,7 +806,7 @@ class WorkflowParser:
                     # 跳过 control_after_generate 等控制参数（不需要传给节点）
                     if param_name in ("control_after_generate",):
                         continue
-                    value = widgets_values[i]
+                    value = normalize_path(widgets_values[i])
                     if value is not None:
                         # 根据参数名推断类型
                         if param_name in ("seed", "steps", "width", "height", "batch_size", "start_at_step", "end_at_step"):
@@ -828,7 +835,7 @@ class WorkflowParser:
                     # 如果这个输入已经通过连接设置了，跳过赋值但不跳过索引
                     if inp_name in inputs:
                         continue
-                    value = widgets_values[i]
+                    value = normalize_path(widgets_values[i])
                     if value is not None:
                         # 根据类型进行转换
                         inp_type = widget_input_types.get(inp_name, "STRING")
@@ -856,7 +863,7 @@ class WorkflowParser:
                     # 按顺序分配
                     for i, inp_name in enumerate(widget_params):
                         if i < len(widgets_values):
-                            value = widgets_values[i]
+                            value = normalize_path(widgets_values[i])
                             if value is not None:
                                 inputs[inp_name] = value
                 except Exception as e:
@@ -876,6 +883,10 @@ class WorkflowParser:
         """根据输入类型转换值的类型"""
         if value is None:
             return value
+        
+        # 处理模型路径：将 Windows 反斜杠转为正斜杠
+        if isinstance(value, str) and '\\' in value:
+            value = value.replace('\\', '/')
         
         try:
             if inp_type == "INT":
@@ -914,13 +925,13 @@ class WorkflowParser:
                 if i < len(widgets_values):
                     widget_name = widget.get("name", f"widget_{i}")
                     if widget_name not in inputs:
-                        inputs[widget_name] = widgets_values[i]
+                        inputs[widget_name] = normalize_path(widgets_values[i])
         else:
             # 最后手段：根据常见节点类型的参数顺序
             common_params = self._get_common_params(node.get("type", ""))
             for i, param_name in enumerate(common_params):
                 if i < len(widgets_values) and param_name not in inputs:
-                    inputs[param_name] = widgets_values[i]
+                    inputs[param_name] = normalize_path(widgets_values[i])
     
     def _get_common_params(self, node_type: str) -> List[str]:
         """获取常见节点类型的参数顺序"""

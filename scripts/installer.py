@@ -584,31 +584,31 @@ class ComfyUIInstaller:
     
     def make_layout(self, progress) -> Layout:
         """Create the display layout with logs and progress"""
-        layout = Layout()
+        # 复用已有的 layout 避免闪烁
+        if not hasattr(self, '_layout'):
+            self._layout = Layout()
+            self._layout.split_column(
+                Layout(name="logs"),
+                Layout(name="progress", size=5)
+            )
         
-        # Create log panel content
+        # 只更新内容，不重建结构
         log_content = "\n".join(self.logs[-15:]) if self.logs else "[dim]Waiting for output...[/dim]"
-        log_panel = Panel(
+        self._layout["logs"].update(Panel(
             log_content,
             title="[bold]Logs[/bold]",
             border_style="blue",
             height=18
-        )
+        ))
         
-        # Create progress panel
-        progress_panel = Panel(
+        self._layout["progress"].update(Panel(
             progress,
             title="[bold]Progress[/bold]",
             border_style="green",
             height=5
-        )
+        ))
         
-        layout.split_column(
-            Layout(log_panel, name="logs"),
-            Layout(progress_panel, name="progress", size=5)
-        )
-        
-        return layout
+        return self._layout
     
     def run(self):
         """Main installation process"""
@@ -642,7 +642,7 @@ class ComfyUIInstaller:
             expand=True
         )
         
-        with Live(self.make_layout(progress), console=self.console, refresh_per_second=4) as live:
+        with Live(self.make_layout(progress), console=self.console, refresh_per_second=8, transient=False) as live:
             self.live = live  # Store reference for log updates
             self._progress = progress  # Store progress reference for log auto-refresh
             

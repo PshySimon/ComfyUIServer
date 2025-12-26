@@ -1686,7 +1686,7 @@ class ImageToImageRequest(BaseModel):
     steps: int = Field(default=10, description="采样步数")
     cfg: float = Field(default=1.0, description="CFG 强度")
     api_key: str = Field(default="none", description="API Key（保留字段）")
-    model: str = Field(default="qwen-image-edit", description="模型名称（保留字段）")
+    model: str = Field(default="qwen_edit_aio", description="模型/工作流名称")
 
 
 class ImageToVideoRequest(BaseModel):
@@ -1711,7 +1711,8 @@ async def image_to_image(request: ImageToImageRequest):
     if not images or len(images) > 3:
         raise HTTPException(status_code=400, detail="请提供1-3张图片")
     
-    workflow_name = next(iter(registered_workflows))
+    # 根据 model 参数选择工作流，如果没有匹配则用第一个
+    workflow_name = request.model if request.model in registered_workflows else next(iter(registered_workflows))
     wf = registered_workflows[workflow_name]
     input_mapping = wf.get("input_mapping", {})
     

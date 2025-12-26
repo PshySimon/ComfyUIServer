@@ -123,11 +123,11 @@ workflows:
     outputs:
       image: "SaveImage"
 
-  # Qwen Image Edit 2511-AIO 单输出版本
-  # 只输出 AIO 流结果，禁用官方流
-  - name: "qwen_edit_aio_single"
+  # Qwen Image Edit 2511-AIO 多输出版本
+  # 输出 4 张图片，只使用 AIO 流
+  - name: "qwen_edit_aio_multi"
     path: "workflows/qwen-edit-aio-multi.json"
-    description: "千问 Qwen Edit 2511-AIO（单输出）"
+    description: "千问 Qwen Edit 2511-AIO（4张输出）"
     inputs:
       image1: "image_25"            # 主输入图片
       image2: "image_24"            # 第二张图片（可选）
@@ -137,5 +137,6 @@ workflows:
       steps: "steps_28"             # 采样步数
       cfg: "cfg_28"                 # CFG 强度
       megapixels: "megapixels_31"   # 输出图片像素数（默认 1.2）
+      batch_size: "amount_62"       # 输出数量（默认 4）
     outputs:
       image: "SaveImage"

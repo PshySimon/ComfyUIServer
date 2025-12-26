@@ -374,9 +374,20 @@ class ModelDownloader:
             self.log(f"[dim]{traceback.format_exc()[:200]}[/dim]")
             return {}
     
-    def find_model_url(self, model_name: str, expected_category: Optional[str] = None) -> Optional[ModelInfo]:
-        """Find download URL for a model"""
+    def find_model_url(self, model_name: str, expected_category: Optional[str] = None, status_callback=None) -> Optional[ModelInfo]:
+        """Find download URL for a model
+        
+        Args:
+            model_name: Name of the model file
+            expected_category: Expected directory category
+            status_callback: Optional callback function to update status display
+        """
+        def update_status(msg):
+            if status_callback:
+                status_callback(f"[bold cyan]{msg}[/bold cyan]")
+        
         # 1. Check popular models
+        update_status(f"Checking popular models: {model_name[:35]}...")
         popular = self.load_popular_models()
         if model_name in popular:
             info = popular[model_name]
@@ -391,6 +402,7 @@ class ModelDownloader:
             )
         
         # 2. Check ComfyUI Manager models
+        update_status(f"Checking ComfyUI Manager: {model_name[:35]}...")
         manager_models = self.load_manager_models()
         for model in manager_models:
             if model.get('filename') == model_name or model.get('name') == model_name:
@@ -405,14 +417,16 @@ class ModelDownloader:
                 )
         
         # 3. Try HuggingFace search
-        hf_info = self.search_huggingface(model_name)
+        update_status(f"Searching HuggingFace: {model_name[:35]}...")
+        hf_info = self.search_huggingface(model_name, status_callback=status_callback)
         if hf_info:
             if expected_category and expected_category != 'input':
                 hf_info.directory = expected_category
             return hf_info
         
         # 4. Try web search (DuckDuckGo) as last resort
-        web_info = self.search_web_for_huggingface(model_name)
+        update_status(f"Web searching (DuckDuckGo): {model_name[:35]}...")
+        web_info = self.search_web_for_huggingface(model_name, status_callback=status_callback)
         if web_info:
             if expected_category and expected_category != 'input':
                 web_info.directory = expected_category
@@ -420,16 +434,22 @@ class ModelDownloader:
         
         return None
     
-    def search_web_for_huggingface(self, model_name: str) -> Optional[ModelInfo]:
+    def search_web_for_huggingface(self, model_name: str, status_callback=None) -> Optional[ModelInfo]:
         """使用 DuckDuckGo 搜索 HuggingFace 上的模型"""
-        self.log(f"[dim]Web searching for {model_name} on HuggingFace...[/dim]")
+        def update_status(msg):
+            if status_callback:
+                status_callback(f"[bold cyan]{msg}[/bold cyan]")
+        
+        update_status(f"DuckDuckGo: searching {model_name[:30]}...")
         
         try:
+            import re
+            
             # 构建搜索查询，限定在 huggingface.co，包含完整文件名
             query = f"site:huggingface.co \"{model_name}\""
             
-            # DuckDuckGo HTML 搜索（不需要 API key）
-            search_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
+            # 使用 DuckDuckGo Lite 版本（返回实际链接）
+            search_url = f"https://lite.duckduckgo.com/lite/?q={urllib.parse.quote(query)}"
             req = urllib.request.Request(
                 search_url,
                 headers={
@@ -440,53 +460,70 @@ class ModelDownloader:
             with urllib.request.urlopen(req, timeout=15) as response:
                 html = response.read().decode('utf-8', errors='ignore')
                 
-                # 提取 HuggingFace 仓库链接
-                # 格式: https://huggingface.co/username/repo-name
-                import re
-                hf_pattern = r'https://huggingface\.co/([^/\s"<>]+/[^/\s"<>]+)'
-                matches = re.findall(hf_pattern, html)
+                # DuckDuckGo Lite 返回的链接格式: uddg=URL_ENCODED_LINK
+                uddg_pattern = r'uddg=([^&"\'<>\s]+)'
+                uddg_matches = re.findall(uddg_pattern, html)
                 
-                # 去重并过滤，优先匹配名称相关的仓库
+                # 解码并提取 HuggingFace 链接
+                hf_urls = []
+                for encoded_url in uddg_matches:
+                    try:
+                        decoded_url = urllib.parse.unquote(encoded_url)
+                        if 'huggingface.co' in decoded_url:
+                            hf_urls.append(decoded_url)
+                    except:
+                        continue
+                
+                # 猜测目录
+                directory = self._guess_model_directory(model_name)
+                
+                # 首先检查是否有直接的文件链接（包含 /blob/main/ 或 /resolve/main/）
+                for url in hf_urls:
+                    if model_name in url and ('/blob/main/' in url or '/resolve/main/' in url):
+                        # 转换为下载链接
+                        download_url = url.replace('/blob/main/', '/resolve/main/')
+                        if not download_url.startswith('https://'):
+                            download_url = 'https://' + download_url.lstrip('/')
+                        self.log(f"[green]Found direct file link via web search[/green]")
+                        return ModelInfo(
+                            name=model_name,
+                            url=download_url,
+                            directory=directory
+                        )
+                
+                # 提取仓库 ID
                 seen = set()
                 repos = []
                 base_name = model_name.replace('.safetensors', '').replace('.ckpt', '').replace('.pth', '').lower()
                 
                 # 提取模型名称的关键词用于匹配
-                # 例如 "Qwen-Rapid-AIO-NSFW-v16" -> ["qwen", "rapid", "aio"]
                 keywords = [k.lower() for k in re.split(r'[-_]', base_name) if len(k) > 2 and not k.isdigit()]
                 
-                for match in matches:
-                    repo_id = match.rstrip('/')
-                    repo_lower = repo_id.lower()
-                    
-                    # 过滤掉非仓库链接
-                    if repo_id in seen:
-                        continue
-                    if any(x in repo_id for x in ['datasets', 'spaces', 'docs', 'blog', 'api']):
-                        continue
-                    
-                    seen.add(repo_id)
-                    
-                    # 计算仓库名与模型名的匹配度
-                    match_score = sum(1 for kw in keywords if kw in repo_lower)
-                    repos.append((repo_id, match_score))
+                hf_repo_pattern = r'huggingface\.co/([^/\s"<>?#]+/[^/\s"<>?#]+)'
+                for url in hf_urls:
+                    matches = re.findall(hf_repo_pattern, url)
+                    for match in matches:
+                        repo_id = match.rstrip('/')
+                        repo_lower = repo_id.lower()
+                        
+                        if repo_id in seen:
+                            continue
+                        if any(x in repo_id for x in ['datasets', 'spaces', 'docs', 'blog', 'api']):
+                            continue
+                        
+                        seen.add(repo_id)
+                        match_score = sum(1 for kw in keywords if kw in repo_lower)
+                        repos.append((repo_id, match_score))
                 
-                # 按匹配度排序，优先检查最相关的仓库
+                # 按匹配度排序
                 repos.sort(key=lambda x: -x[1])
-                repos = [r[0] for r in repos[:5]]  # 最多检查 5 个
-                
-                if repos:
-                    self.log(f"[dim]Found {len(repos)} repos via web search[/dim]")
-                
-                # 猜测目录
-                directory = self._guess_model_directory(model_name)
+                repos = [r[0] for r in repos[:5]]
                 
                 # 在找到的仓库中搜索文件
                 for repo_id in repos:
-                    self.log(f"[dim]Checking repo: {repo_id}[/dim]")
+                    update_status(f"DuckDuckGo: checking {repo_id[:35]}...")
                     found_url = self._search_repo_for_file(repo_id, model_name)
                     if found_url:
-                        self.log(f"[green]Found via web search in {repo_id}[/green]")
                         return ModelInfo(
                             name=model_name,
                             url=found_url,
@@ -494,7 +531,7 @@ class ModelDownloader:
                         )
                 
         except Exception as e:
-            self.log(f"[dim]Web search failed: {e}[/dim]")
+            pass
         
         return None
     
@@ -517,9 +554,11 @@ class ModelDownloader:
             return "diffusion_models"
         return "diffusion_models"  # 默认
     
-    def search_huggingface(self, model_name: str) -> Optional[ModelInfo]:
+    def search_huggingface(self, model_name: str, status_callback=None) -> Optional[ModelInfo]:
         """Search HuggingFace for a model by filename"""
-        self.log(f"[dim]Searching HuggingFace for {model_name}...[/dim]")
+        def update_status(msg):
+            if status_callback:
+                status_callback(f"[bold cyan]{msg}[/bold cyan]")
         
         try:
             base_name = model_name.replace('.safetensors', '').replace('.ckpt', '').replace('.pth', '')
@@ -544,6 +583,7 @@ class ModelDownloader:
             
             # Try each search query
             for query in search_queries:
+                update_status(f"HuggingFace API: {query[:30]}...")
                 url = f"https://huggingface.co/api/models?search={urllib.parse.quote(query)}&limit=10"
                 req = urllib.request.Request(url, headers={'User-Agent': 'ComfyUI-ModelDownloader/1.0'})
                 
@@ -555,22 +595,19 @@ class ModelDownloader:
                             repo_id = result.get('id', '')
                             
                             # Search recursively in repo
-                            self.log(f"[dim]Checking repo: {repo_id}[/dim]")
+                            update_status(f"Checking repo: {repo_id[:35]}...")
                             found_url = self._search_repo_for_file(repo_id, model_name)
                             if found_url:
-                                self.log(f"[green]Found in {repo_id}[/green]")
                                 return ModelInfo(
                                     name=model_name,
                                     url=found_url,
                                     directory=directory
                                 )
-                            else:
-                                self.log(f"[dim]  ✗ key file not found in {repo_id}[/dim]")
                 except:
                     continue
             
         except Exception as e:
-            self.log(f"[dim]HuggingFace search failed: {e}[/dim]")
+            pass
         
         return None
     
@@ -881,7 +918,7 @@ class ModelDownloader:
                     skipped.append(name)
                     continue
                 
-                info = self.find_model_url(name, expected_category=category)
+                info = self.find_model_url(name, expected_category=category, status_callback=status.update)
                 if info:
                     # 获取文件大小
                     file_size = self.get_file_size_from_url(info.url)

@@ -1022,6 +1022,14 @@ class WorkflowExecutor:
             return obj[index]
         except KeyError:
             return obj.get("result", [None] * (index + 1))[index]
+    # UI 辅助节点，执行时应跳过
+    UI_HELPER_NODES = {
+        "Fast Groups Bypasser (rgthree)",
+        "Fast Groups Muter (rgthree)",
+        "Reroute",
+        "Note",
+        "PrimitiveNode",
+    }
     
     def execute(self, workflow_data: Dict, load_order: List, params: Dict = None) -> Dict:
         """执行工作流"""
@@ -1033,6 +1041,11 @@ class WorkflowExecutor:
             for node_id, node_data in load_order:
                 class_type = node_data.get("class_type")
                 if not class_type:
+                    continue
+                
+                # 跳过 UI 辅助节点
+                if class_type in self.UI_HELPER_NODES:
+                    print(f"[DEBUG] 跳过 UI 辅助节点: {class_type} (ID: {node_id})")
                     continue
                 
                 if class_type not in self.node_mappings:

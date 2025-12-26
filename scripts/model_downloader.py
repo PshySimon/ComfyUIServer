@@ -578,19 +578,22 @@ class ModelDownloader:
             directory = self._guess_model_directory(model_name)
             
             # Generate search query variants
-            # e.g., "seedvr2_ema_7b_fp16" -> ["seedvr2_ema_7b_fp16", "seedvr2", "seedvr2 ema"]
             search_queries = [base_name]
             
-            # Add first part before underscore (e.g., "seedvr2" from "seedvr2_ema_7b_fp16")
-            parts = base_name.split('_')
+            # 同时支持 _ 和 - 分隔符
+            import re
+            parts = re.split(r'[-_]', base_name)
             if len(parts) > 1:
+                # 添加前几个部分的组合
                 search_queries.append(parts[0])
-                # Also try first two parts
                 if len(parts) > 2:
-                    search_queries.append('_'.join(parts[:2]))
+                    search_queries.append('-'.join(parts[:2]))
+                    search_queries.append('-'.join(parts[:3]))
+                if len(parts) > 3:
+                    search_queries.append('-'.join(parts[:4]))
             
-            # Add hyphenated version
-            search_queries.append(base_name.replace('_', '-'))
+            # 去重
+            search_queries = list(dict.fromkeys(search_queries))
             
             # Try each search query
             for query in search_queries:

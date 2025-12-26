@@ -586,6 +586,37 @@ class ModelDownloader:
         
         return local_models
     
+    def get_file_size_from_url(self, url: str) -> Optional[int]:
+        """通过 HEAD 请求获取文件大小"""
+        try:
+            req = urllib.request.Request(url, method='HEAD', headers={'User-Agent': 'ComfyUI-ModelDownloader/1.0'})
+            with urllib.request.urlopen(req, timeout=10) as response:
+                content_length = response.headers.get('Content-Length')
+                if content_length:
+                    return int(content_length)
+        except:
+            pass
+        return None
+    
+    def get_disk_free_space(self, path: Path) -> int:
+        """获取指定路径的磁盘剩余空间（字节）"""
+        try:
+            stat = os.statvfs(path)
+            return stat.f_bavail * stat.f_frsize
+        except:
+            return 0
+    
+    def format_size(self, size_bytes: int) -> str:
+        """格式化文件大小显示"""
+        if size_bytes >= 1024 * 1024 * 1024:
+            return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
+        elif size_bytes >= 1024 * 1024:
+            return f"{size_bytes / (1024 * 1024):.1f} MB"
+        elif size_bytes >= 1024:
+            return f"{size_bytes / 1024:.1f} KB"
+        else:
+            return f"{size_bytes} B"
+    
     def download_with_aria2(self, model: ModelInfo, progress_callback=None) -> bool:
         """Download a model using aria2c"""
         target_dir = self.models_dir / model.directory
@@ -724,6 +755,7 @@ class ModelDownloader:
         models_to_download: List[ModelInfo] = []
         skipped: List[str] = []
         not_found: List[str] = []
+        total_download_size: int = 0
         
         from rich.status import Status
         
@@ -746,7 +778,15 @@ class ModelDownloader:
                 
                 info = self.find_model_url(name, expected_category=category)
                 if info:
-                    self.console.print(f"  [yellow]↓[/yellow] {name} [dim]-> {info.directory}/[/dim]")
+                    # 获取文件大小
+                    file_size = self.get_file_size_from_url(info.url)
+                    info.size = file_size
+                    if file_size:
+                        total_download_size += file_size
+                        size_str = self.format_size(file_size)
+                        self.console.print(f"  [yellow]↓[/yellow] {name} [dim]-> {info.directory}/ ({size_str})[/dim]")
+                    else:
+                        self.console.print(f"  [yellow]↓[/yellow] {name} [dim]-> {info.directory}/ (size unknown)[/dim]")
                     models_to_download.append(info)
                 else:
                     self.console.print(f"  [red]?[/red] {name} [dim](not found)[/dim]")
@@ -755,6 +795,34 @@ class ModelDownloader:
         if not models_to_download:
             self.console.print("\n[green]All models are already installed![/green]")
             return [], skipped, not_found
+        
+        # 显示总下载大小和磁盘空间检查
+        self.console.print()
+        if total_download_size > 0:
+            self.console.print(f"[cyan]Total download size: {self.format_size(total_download_size)}[/cyan]")
+            
+            # 检查磁盘空间
+            free_space = self.get_disk_free_space(self.models_dir.parent)
+            if free_space > 0:
+                self.console.print(f"[dim]Available disk space: {self.format_size(free_space)}[/dim]")
+                
+                # 预留 10% 的额外空间
+                required_space = int(total_download_size * 1.1)
+                if free_space < required_space:
+                    self.console.print(f"\n[bold red]⚠ WARNING: Disk space may not be enough![/bold red]")
+                    self.console.print(f"[red]  Required: ~{self.format_size(required_space)} (with 10% buffer)[/red]")
+                    self.console.print(f"[red]  Available: {self.format_size(free_space)}[/red]")
+                    self.console.print()
+                    
+                    # 询问是否继续
+                    try:
+                        choice = self.console.input("[yellow]Continue anyway? (y/N): [/yellow]")
+                        if choice.lower() != 'y':
+                            self.console.print("[yellow]Download cancelled.[/yellow]")
+                            return [], skipped, not_found + [m.name for m in models_to_download]
+                    except KeyboardInterrupt:
+                        self.console.print("\n[yellow]Download cancelled.[/yellow]")
+                        return [], skipped, not_found + [m.name for m in models_to_download]
         
         # Download with progress display (reduced refresh rate to prevent flicker)
         self.console.print(f"\n[cyan]Downloading {len(models_to_download)} models...[/cyan]\n")

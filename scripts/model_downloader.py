@@ -49,13 +49,19 @@ class ModelInfo:
 
 def normalize_model_path(path_str: str) -> str:
     """
-    从路径字符串中提取文件名，同时处理 Windows 和 Unix 路径
-    例如: "Qwen\\model.safetensors" -> "model.safetensors"
-          "loras/model.safetensors" -> "model.safetensors"
+    标准化模型路径，将 Windows 反斜杠转为正斜杠
+    保留子目录结构，例如: "Qwen\\model.safetensors" -> "Qwen/model.safetensors"
     """
-    # 先统一把反斜杠转成正斜杠
+    # 统一把反斜杠转成正斜杠
+    return path_str.replace('\\', '/')
+
+
+def get_model_filename(path_str: str) -> str:
+    """
+    从路径字符串中提取文件名
+    例如: "Qwen/model.safetensors" -> "model.safetensors"
+    """
     normalized = path_str.replace('\\', '/')
-    # 然后取最后一部分作为文件名
     return normalized.split('/')[-1]
 
 
@@ -715,17 +721,24 @@ class ModelDownloader:
         return None
     
     def get_local_models(self) -> set:
-        """Get set of locally installed model filenames"""
+        """Get set of locally installed model filenames and relative paths"""
         local_models = set()
         
         if not self.models_dir.exists():
             return local_models
         
+        model_extensions = ['.safetensors', '.ckpt', '.pth', '.pt', '.bin', '.gguf']
+        
         for subdir in self.models_dir.iterdir():
             if subdir.is_dir():
                 for file in subdir.rglob('*'):
-                    if file.is_file() and file.suffix in ['.safetensors', '.ckpt', '.pth', '.pt', '.bin']:
+                    if file.is_file() and file.suffix in model_extensions:
+                        # 添加文件名
                         local_models.add(file.name)
+                        # 也添加相对于 subdir 的路径（如 Qwen/model.gguf）
+                        rel_path = file.relative_to(subdir)
+                        if str(rel_path) != file.name:
+                            local_models.add(str(rel_path).replace('\\', '/'))
         
         return local_models
     
@@ -762,9 +775,19 @@ class ModelDownloader:
     
     def download_with_aria2(self, model: ModelInfo, progress_callback=None) -> bool:
         """Download a model using aria2c"""
-        target_dir = self.models_dir / model.directory
+        # 处理子目录结构，如 "Qwen/model.gguf"
+        model_path = model.name.replace('\\', '/')
+        if '/' in model_path:
+            # 有子目录，需要创建
+            subdir = '/'.join(model_path.split('/')[:-1])
+            filename = model_path.split('/')[-1]
+            target_dir = self.models_dir / model.directory / subdir
+        else:
+            filename = model_path
+            target_dir = self.models_dir / model.directory
+        
         target_dir.mkdir(parents=True, exist_ok=True)
-        target_file = target_dir / model.name
+        target_file = target_dir / filename
         
         if target_file.exists():
             self.log(f"[yellow]Model already exists: {model.name}[/yellow]")
@@ -777,7 +800,7 @@ class ModelDownloader:
         cmd = [
             "aria2c",
             "-d", str(target_dir),
-            "-o", model.name,
+            "-o", filename,
             "-s", "16",           # 16 connections
             "-x", "16",           # max connections per server
             "-k", "1M",           # min split size

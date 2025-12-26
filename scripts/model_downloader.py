@@ -47,6 +47,18 @@ class ModelInfo:
     size: Optional[int] = None  # Size in bytes if known
 
 
+def normalize_model_path(path_str: str) -> str:
+    """
+    从路径字符串中提取文件名，同时处理 Windows 和 Unix 路径
+    例如: "Qwen\\model.safetensors" -> "model.safetensors"
+          "loras/model.safetensors" -> "model.safetensors"
+    """
+    # 先统一把反斜杠转成正斜杠
+    normalized = path_str.replace('\\', '/')
+    # 然后取最后一部分作为文件名
+    return normalized.split('/')[-1]
+
+
 class ModelDownloader:
     """Downloads ComfyUI models using aria2 with progress display"""
     
@@ -301,7 +313,7 @@ class ModelDownloader:
                             indices = [indices]
                         for idx in indices:
                             if idx < len(widgets) and is_model_filename(widgets[idx]):
-                                name = Path(widgets[idx]).name
+                                name = normalize_model_path(widgets[idx])
                                 # Only set if not already present or if we have a specific category (not 'input' or default)
                                 if name not in models or category != 'input':
                                     models[name] = category
@@ -310,7 +322,7 @@ class ModelDownloader:
                         # Assign 'unknown' category, which will rely on default guessing
                         for value in widgets:
                             if is_model_filename(value):
-                                name = Path(value).name
+                                name = normalize_model_path(value)
                                 if name not in models:
                                     models[name] = None
             
@@ -333,7 +345,7 @@ class ModelDownloader:
                     
                     for key, value in inputs.items():
                         if is_model_filename(value):
-                            name = Path(value).name
+                            name = normalize_model_path(value)
                             if name not in models or category:
                                 models[name] = category
             

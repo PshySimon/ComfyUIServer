@@ -93,6 +93,67 @@ workflows:
     description: "文生图"
 ```
 
+## 参数映射配置
+
+将工作流节点参数映射为友好的 API 参数名。
+
+### 如何找到节点参数名
+
+1. 在 ComfyUI 中打开工作流 JSON 文件
+2. 找到要暴露的节点，记录 `id` 和输入字段名
+3. 参数格式为 `{字段名}_{节点ID}`
+
+例如节点 JSON：
+```json
+{
+  "id": 6,
+  "type": "CLIPTextEncode",
+  "widgets_values": ["a beautiful cat"]
+}
+```
+对应参数名为 `text_6`。
+
+### 配置示例
+
+```yaml
+workflows:
+  - name: "image_to_video"
+    path: "workflows/wan_i2v.json"
+    description: "图生视频"
+    inputs:
+      # 格式: {API参数名}: "{字段名}_{节点ID}"
+      image: "image_1"              # 输入图片（支持 base64/URL/文件名）
+      prompt: "text_6"              # 正向提示词
+      negative_prompt: "text_7"     # 反向提示词
+      seed: "seed_10"               # 随机种子
+      steps: "steps_10"             # 采样步数
+      width: "custom_width_34"      # 输出宽度
+      height: "custom_height_34"    # 输出高度
+    outputs:
+      video: "VHS_VideoCombine"     # 输出节点类型
+```
+
+### API 调用
+
+配置后即可使用友好参数名调用：
+
+```bash
+curl -X POST http://localhost:6006/workflow/image_to_video \
+  -H "Content-Type: application/json" \
+  -d '{
+    "params": {
+      "prompt": "a cat running",
+      "seed": 42,
+      "steps": 20
+    },
+    "images": {
+      "image": "data:image/png;base64,..."
+    }
+  }'
+```
+
+未配置映射的参数也可以直接使用原始格式（如 `text_6`）。
+
 ## 项目结构
 
 ```

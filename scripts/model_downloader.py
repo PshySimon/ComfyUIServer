@@ -411,7 +411,95 @@ class ModelDownloader:
                 hf_info.directory = expected_category
             return hf_info
         
+        # 4. Try web search (DuckDuckGo) as last resort
+        web_info = self.search_web_for_huggingface(model_name)
+        if web_info:
+            if expected_category and expected_category != 'input':
+                web_info.directory = expected_category
+            return web_info
+        
         return None
+    
+    def search_web_for_huggingface(self, model_name: str) -> Optional[ModelInfo]:
+        """使用 DuckDuckGo 搜索 HuggingFace 上的模型"""
+        self.log(f"[dim]Web searching for {model_name} on HuggingFace...[/dim]")
+        
+        try:
+            # 构建搜索查询，限定在 huggingface.co
+            base_name = model_name.replace('.safetensors', '').replace('.ckpt', '').replace('.pth', '')
+            query = f"site:huggingface.co {base_name} safetensors"
+            
+            # DuckDuckGo HTML 搜索（不需要 API key）
+            search_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
+            req = urllib.request.Request(
+                search_url,
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+            )
+            
+            with urllib.request.urlopen(req, timeout=15) as response:
+                html = response.read().decode('utf-8', errors='ignore')
+                
+                # 提取 HuggingFace 仓库链接
+                # 格式: https://huggingface.co/username/repo-name
+                import re
+                hf_pattern = r'https://huggingface\.co/([^/\s"<>]+/[^/\s"<>]+)'
+                matches = re.findall(hf_pattern, html)
+                
+                # 去重并过滤
+                seen = set()
+                repos = []
+                for match in matches:
+                    repo_id = match.rstrip('/')
+                    # 过滤掉非仓库链接
+                    if repo_id not in seen and not any(x in repo_id for x in ['datasets', 'spaces', 'docs', 'blog']):
+                        seen.add(repo_id)
+                        repos.append(repo_id)
+                        if len(repos) >= 5:
+                            break
+                
+                if repos:
+                    self.log(f"[dim]Found {len(repos)} repos via web search[/dim]")
+                
+                # 猜测目录
+                directory = self._guess_model_directory(model_name)
+                
+                # 在找到的仓库中搜索文件
+                for repo_id in repos:
+                    self.log(f"[dim]Checking repo: {repo_id}[/dim]")
+                    found_url = self._search_repo_for_file(repo_id, model_name)
+                    if found_url:
+                        self.log(f"[green]Found via web search in {repo_id}[/green]")
+                        return ModelInfo(
+                            name=model_name,
+                            url=found_url,
+                            directory=directory
+                        )
+                
+        except Exception as e:
+            self.log(f"[dim]Web search failed: {e}[/dim]")
+        
+        return None
+    
+    def _guess_model_directory(self, model_name: str) -> str:
+        """根据模型名称猜测存放目录"""
+        name_lower = model_name.lower()
+        if 'lora' in name_lower:
+            return "loras"
+        elif 'vae' in name_lower:
+            return "vae"
+        elif 'controlnet' in name_lower or 'control_' in name_lower:
+            return "controlnet"
+        elif 't5' in name_lower or 'clip' in name_lower or 'text_encoder' in name_lower:
+            return "text_encoders"
+        elif 'upscale' in name_lower or 'esrgan' in name_lower:
+            return "upscale_models"
+        elif 'checkpoint' in name_lower or 'sd_' in name_lower or 'sdxl' in name_lower:
+            return "checkpoints"
+        elif 'unet' in name_lower or 'diffusion' in name_lower:
+            return "diffusion_models"
+        return "diffusion_models"  # 默认
     
     def search_huggingface(self, model_name: str) -> Optional[ModelInfo]:
         """Search HuggingFace for a model by filename"""
@@ -421,22 +509,7 @@ class ModelDownloader:
             base_name = model_name.replace('.safetensors', '').replace('.ckpt', '').replace('.pth', '')
             
             # Guess the directory based on model name patterns
-            directory = "diffusion_models"  # better default for modern models
-            name_lower = model_name.lower()
-            if 'lora' in name_lower:
-                directory = "loras"
-            elif 'vae' in name_lower:
-                directory = "vae"
-            elif 'controlnet' in name_lower or 'control_' in name_lower:
-                directory = "controlnet"
-            elif 't5' in name_lower or 'clip' in name_lower or 'text_encoder' in name_lower:
-                directory = "text_encoders"
-            elif 'upscale' in name_lower or 'esrgan' in name_lower:
-                directory = "upscale_models"
-            elif 'checkpoint' in name_lower or 'sd_' in name_lower or 'sdxl' in name_lower:
-                directory = "checkpoints"
-            elif 'unet' in name_lower or 'diffusion' in name_lower:
-                directory = "diffusion_models"
+            directory = self._guess_model_directory(model_name)
             
             # Generate search query variants
             # e.g., "seedvr2_ema_7b_fp16" -> ["seedvr2_ema_7b_fp16", "seedvr2", "seedvr2 ema"]

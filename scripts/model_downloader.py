@@ -447,13 +447,16 @@ class ModelDownloader:
             if status_callback:
                 status_callback(f"[bold cyan]{msg}[/bold cyan]")
         
-        update_status(f"DuckDuckGo: searching {model_name[:30]}...")
+        # 提取纯文件名用于搜索（去掉子目录）
+        filename = get_model_filename(model_name)
+        
+        update_status(f"DuckDuckGo: searching {filename[:30]}...")
         
         try:
             import re
             
             # 构建搜索查询，限定在 huggingface.co，包含完整文件名
-            query = f"site:huggingface.co \"{model_name}\""
+            query = f"site:huggingface.co \"{filename}\""
             
             # 使用 DuckDuckGo Lite 版本（返回实际链接）
             search_url = f"https://lite.duckduckgo.com/lite/?q={urllib.parse.quote(query)}"
@@ -486,12 +489,11 @@ class ModelDownloader:
                 
                 # 首先检查是否有直接的文件链接（包含 /blob/main/ 或 /resolve/main/）
                 for url in hf_urls:
-                    if model_name in url and ('/blob/main/' in url or '/resolve/main/' in url):
+                    if filename in url and ('/blob/main/' in url or '/resolve/main/' in url):
                         # 转换为下载链接
                         download_url = url.replace('/blob/main/', '/resolve/main/')
                         if not download_url.startswith('https://'):
                             download_url = 'https://' + download_url.lstrip('/')
-                        self.log(f"[green]Found direct file link via web search[/green]")
                         return ModelInfo(
                             name=model_name,
                             url=download_url,
@@ -501,7 +503,7 @@ class ModelDownloader:
                 # 提取仓库 ID
                 seen = set()
                 repos = []
-                base_name = model_name.replace('.safetensors', '').replace('.ckpt', '').replace('.pth', '').lower()
+                base_name = filename.replace('.safetensors', '').replace('.ckpt', '').replace('.pth', '').replace('.gguf', '').lower()
                 
                 # 提取模型名称的关键词用于匹配
                 keywords = [k.lower() for k in re.split(r'[-_]', base_name) if len(k) > 2 and not k.isdigit()]
@@ -529,7 +531,7 @@ class ModelDownloader:
                 # 在找到的仓库中搜索文件
                 for repo_id in repos:
                     update_status(f"DuckDuckGo: checking {repo_id[:35]}...")
-                    found_url = self._search_repo_for_file(repo_id, model_name)
+                    found_url = self._search_repo_for_file(repo_id, filename)
                     if found_url:
                         return ModelInfo(
                             name=model_name,
@@ -568,7 +570,9 @@ class ModelDownloader:
                 status_callback(f"[bold cyan]{msg}[/bold cyan]")
         
         try:
-            base_name = model_name.replace('.safetensors', '').replace('.ckpt', '').replace('.pth', '')
+            # 提取纯文件名用于搜索（去掉子目录）
+            filename = get_model_filename(model_name)
+            base_name = filename.replace('.safetensors', '').replace('.ckpt', '').replace('.pth', '').replace('.gguf', '')
             
             # Guess the directory based on model name patterns
             directory = self._guess_model_directory(model_name)
@@ -603,7 +607,7 @@ class ModelDownloader:
                             
                             # Search recursively in repo
                             update_status(f"Checking repo: {repo_id[:35]}...")
-                            found_url = self._search_repo_for_file(repo_id, model_name)
+                            found_url = self._search_repo_for_file(repo_id, filename)
                             if found_url:
                                 return ModelInfo(
                                     name=model_name,

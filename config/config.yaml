@@ -106,21 +106,19 @@ server:
 # ============================================================================
 
 workflows:
-  # Qwen Image Edit eigen-banana 工作流
-  # 输入 3 张图片 + 编辑指令 → 输出编辑后的图片
-  - name: "eigen_banana"
-    path: "workflows/eigen_banana.json"
-    description: "Qwen Image Edit - 多图编辑工作流"
+  # Qwen Image Edit 2511-AIO 工作流整合
+  # 支持多图编辑，输入 1-3 张图片 + 编辑指令
+  - name: "qwen_edit_aio"
+    path: "workflows/▶千问Qwen+Edit+2511-AIO工作流整合.json"
+    description: "千问 Qwen Edit 2511-AIO 多图编辑"
     inputs:
-      image1: "image_1"             # 第一张图片
-      image2: "image_2"             # 第二张图片（可选）
-      image3: "image_3"             # 第三张图片（可选）
-      positive_prompt: "text_39"    # 提示词
-      use_custom_size: "use_custom_size_34"  # 是否使用自定义尺寸
-      width: "custom_width_34"      # 输出宽度
-      height: "custom_height_34"    # 输出高度
-      seed: "seed_10"               # 随机种子
-      steps: "steps_10"             # 采样步数
-      cfg: "cfg_10"                 # CFG 强度
+      image1: "image_25"            # 主输入图片
+      image2: "image_24"            # 第二张图片（可选）
+      image3: "image_26"            # 第三张图片（可选）
+      prompt: "prompt_27"           # 编辑提示词
+      seed: "seed_28"               # 随机种子
+      steps: "steps_28"             # 采样步数
+      cfg: "cfg_28"                 # CFG 强度
+      megapixels: "megapixels_31"   # 输出图片像素数（默认 1.2）
     outputs:
-      image: "PreviewImage"
+      image: "SaveImage"

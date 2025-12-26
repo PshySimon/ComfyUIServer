@@ -1,5 +1,6 @@
 # ComfyUI installation
 ComfyUI/
 
-# Workflow files
+# Workflow files (忽略内容，但保留文件夹)
 workflows/*
+!workflows/.gitkeep

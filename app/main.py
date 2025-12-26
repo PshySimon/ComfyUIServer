@@ -1358,6 +1358,7 @@ def register_workflow_endpoints():
         name = wf.get("name")
         path = wf.get("path")
         description = wf.get("description", f"工作流: {name}")
+        workflow_types = wf.get("type", [])  # 工作流类型列表
         
         # 获取输入输出映射配置
         input_mapping = wf.get("inputs", {})  # {friendly_name: raw_param}
@@ -1408,6 +1409,7 @@ def register_workflow_endpoints():
         registered_workflows[name] = {
             "path": str(workflow_path),
             "description": description,
+            "type": workflow_types,              # 工作流类型列表
             "inputs": semantic_inputs,           # 语义化输入参数
             "input_mapping": input_mapping,      # 原始映射配置
             "output_mapping": output_mapping,    # 输出节点映射
@@ -1416,7 +1418,16 @@ def register_workflow_endpoints():
         
         input_count = len(semantic_inputs)
         output_count = len(output_mapping)
-        print(f"已注册工作流: {name} ({input_count} 个输入, {output_count} 个输出)")
+        type_str = ", ".join(workflow_types) if workflow_types else "通用"
+        print(f"已注册工作流: {name} [类型: {type_str}] ({input_count} 个输入, {output_count} 个输出)")
+
+
+def get_workflows_by_type(workflow_type: str) -> Dict[str, Dict]:
+    """根据类型筛选工作流"""
+    return {
+        name: wf for name, wf in registered_workflows.items()
+        if workflow_type in wf.get("type", [])
+    }
 
 
 @app.on_event("startup")
@@ -1693,13 +1704,16 @@ class ImageToVideoRequest(BaseModel):
     """图生视频请求"""
     images: List[str] = Field(..., description="输入图片列表（base64编码）")
     positive_prompt: str = Field(default="", description="正向提示词")
+    model: str = Field(default="", description="模型/工作流名称")
 
 
 @app.post("/image-to-image", response_model=TaskResponse)
 async def image_to_image(request: ImageToImageRequest):
     """图生图接口，支持单张或多张图片（1-3张）"""
-    if not registered_workflows:
-        raise HTTPException(status_code=404, detail="没有配置任何工作流")
+    # 筛选支持 image-to-image 类型的工作流
+    available_workflows = get_workflows_by_type("image-to-image")
+    if not available_workflows:
+        raise HTTPException(status_code=404, detail="没有配置 image-to-image 类型的工作流")
     
     # 兼容两种输入格式：image (单张) 或 images (多张)
     images = []
@@ -1711,9 +1725,12 @@ async def image_to_image(request: ImageToImageRequest):
     if not images or len(images) > 3:
         raise HTTPException(status_code=400, detail="请提供1-3张图片")
     
-    # 根据 model 参数选择工作流，如果没有匹配则用第一个
-    workflow_name = request.model if request.model in registered_workflows else next(iter(registered_workflows))
-    wf = registered_workflows[workflow_name]
+    # 根据 model 参数选择工作流，如果没有匹配则用第一个可用的
+    if request.model in available_workflows:
+        workflow_name = request.model
+    else:
+        workflow_name = next(iter(available_workflows))
+    wf = available_workflows[workflow_name]
     input_mapping = wf.get("input_mapping", {})
     
     # 构建参数
@@ -1771,14 +1788,21 @@ async def image_to_image(request: ImageToImageRequest):
 @app.post("/image-to-video", response_model=TaskResponse)
 async def image_to_video(request: ImageToVideoRequest):
     """图生视频接口"""
-    if not registered_workflows:
-        raise HTTPException(status_code=404, detail="没有配置任何工作流")
+    # 筛选支持 image-to-video 类型的工作流
+    available_workflows = get_workflows_by_type("image-to-video")
+    if not available_workflows:
+        raise HTTPException(status_code=404, detail="没有配置 image-to-video 类型的工作流")
     
     if not request.images:
         raise HTTPException(status_code=400, detail="请提供图片")
     
-    workflow_name = next(iter(registered_workflows))
-    wf = registered_workflows[workflow_name]
+    # 根据 model 参数选择工作流，如果没有匹配则用第一个可用的
+    model = getattr(request, 'model', None)
+    if model and model in available_workflows:
+        workflow_name = model
+    else:
+        workflow_name = next(iter(available_workflows))
+    wf = available_workflows[workflow_name]
     input_mapping = wf.get("input_mapping", {})
     
     # 构建参数

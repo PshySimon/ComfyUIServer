@@ -766,42 +766,49 @@ class ModelDownloader:
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
-            TaskProgressColumn(),
-            DownloadColumn(),
-            TransferSpeedColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("{task.fields[speed]}"),
             console=self.console,
             expand=True,
             transient=False,  # Keep progress bar visible
         )
         
         # Use lower refresh rate to prevent flicker
-        with Live(progress, console=self.console, refresh_per_second=2, transient=False) as live:
+        with Live(progress, console=self.console, refresh_per_second=4, transient=False) as live:
             overall_task = progress.add_task(
                 "[cyan]Overall Progress",
-                total=len(models_to_download)
+                total=len(models_to_download),
+                speed=""
             )
             
             for model in models_to_download:
                 current_task = progress.add_task(
                     f"[yellow]{model.name[:40]}...",
-                    total=100
+                    total=100,
+                    speed=""
                 )
                 
                 def update_progress(percent, speed):
-                    progress.update(current_task, completed=percent, description=f"[yellow]{model.name[:30]}... {speed}")
+                    progress.update(current_task, completed=percent, 
+                                   description=f"[yellow]{model.name[:35]}",
+                                   speed=f"[cyan]{speed}[/cyan]")
                 
                 success = self.download_with_aria2(model, update_progress)
                 
                 if success:
                     downloaded.append(model.name)
-                    progress.update(current_task, completed=100, description=f"[green]✓ {model.name[:40]}")
+                    progress.update(current_task, completed=100, 
+                                   description=f"[green]✓ {model.name[:40]}",
+                                   speed="[green]done[/green]")
                 else:
                     failed.append(model.name)
-                    progress.update(current_task, description=f"[red]✗ {model.name[:40]}")
+                    progress.update(current_task, 
+                                   description=f"[red]✗ {model.name[:40]}",
+                                   speed="[red]failed[/red]")
                 
                 progress.advance(overall_task)
             
-            progress.update(overall_task, description="[green]✓ Downloads Complete")
+            progress.update(overall_task, description="[green]✓ Downloads Complete", speed="")
         
         # Show summary
         self.show_summary(downloaded, skipped, failed + not_found)

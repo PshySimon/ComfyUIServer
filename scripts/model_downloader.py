@@ -612,10 +612,26 @@ class ModelDownloader:
         try:
             tree_path = f"/{path}" if path else ""
             url = f"https://huggingface.co/api/models/{repo_id}/tree/main{tree_path}"
+            
+            # 使用 opener 来自动处理重定向
+            opener = urllib.request.build_opener(urllib.request.HTTPRedirectHandler())
             req = urllib.request.Request(url, headers={'User-Agent': 'ComfyUI-ModelDownloader/1.0'})
             
-            with urllib.request.urlopen(req, timeout=10) as response:
-                items = json.loads(response.read().decode('utf-8'))
+            with opener.open(req, timeout=10) as response:
+                content = response.read().decode('utf-8')
+                
+                # 检查是否是重定向响应（文本形式）
+                if content.startswith('Temporary Redirect') or content.startswith('Permanent Redirect'):
+                    # 提取重定向 URL
+                    import re
+                    redirect_match = re.search(r'Redirecting to (/api/models/[^\s]+)', content)
+                    if redirect_match:
+                        new_url = f"https://huggingface.co{redirect_match.group(1)}"
+                        req2 = urllib.request.Request(new_url, headers={'User-Agent': 'ComfyUI-ModelDownloader/1.0'})
+                        with opener.open(req2, timeout=10) as response2:
+                            content = response2.read().decode('utf-8')
+                
+                items = json.loads(content)
                 
                 # Generate filename variants to try (exact match first, then fuzzy)
                 filename_variants = self._generate_filename_variants(filename)

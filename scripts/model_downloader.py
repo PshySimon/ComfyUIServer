@@ -425,9 +425,8 @@ class ModelDownloader:
         self.log(f"[dim]Web searching for {model_name} on HuggingFace...[/dim]")
         
         try:
-            # 构建搜索查询，限定在 huggingface.co
-            base_name = model_name.replace('.safetensors', '').replace('.ckpt', '').replace('.pth', '')
-            query = f"site:huggingface.co {base_name} safetensors"
+            # 构建搜索查询，限定在 huggingface.co，包含完整文件名
+            query = f"site:huggingface.co \"{model_name}\""
             
             # DuckDuckGo HTML 搜索（不需要 API key）
             search_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
@@ -447,17 +446,34 @@ class ModelDownloader:
                 hf_pattern = r'https://huggingface\.co/([^/\s"<>]+/[^/\s"<>]+)'
                 matches = re.findall(hf_pattern, html)
                 
-                # 去重并过滤
+                # 去重并过滤，优先匹配名称相关的仓库
                 seen = set()
                 repos = []
+                base_name = model_name.replace('.safetensors', '').replace('.ckpt', '').replace('.pth', '').lower()
+                
+                # 提取模型名称的关键词用于匹配
+                # 例如 "Qwen-Rapid-AIO-NSFW-v16" -> ["qwen", "rapid", "aio"]
+                keywords = [k.lower() for k in re.split(r'[-_]', base_name) if len(k) > 2 and not k.isdigit()]
+                
                 for match in matches:
                     repo_id = match.rstrip('/')
+                    repo_lower = repo_id.lower()
+                    
                     # 过滤掉非仓库链接
-                    if repo_id not in seen and not any(x in repo_id for x in ['datasets', 'spaces', 'docs', 'blog']):
-                        seen.add(repo_id)
-                        repos.append(repo_id)
-                        if len(repos) >= 5:
-                            break
+                    if repo_id in seen:
+                        continue
+                    if any(x in repo_id for x in ['datasets', 'spaces', 'docs', 'blog', 'api']):
+                        continue
+                    
+                    seen.add(repo_id)
+                    
+                    # 计算仓库名与模型名的匹配度
+                    match_score = sum(1 for kw in keywords if kw in repo_lower)
+                    repos.append((repo_id, match_score))
+                
+                # 按匹配度排序，优先检查最相关的仓库
+                repos.sort(key=lambda x: -x[1])
+                repos = [r[0] for r in repos[:5]]  # 最多检查 5 个
                 
                 if repos:
                     self.log(f"[dim]Found {len(repos)} repos via web search[/dim]")

@@ -151,6 +151,36 @@ class ComfyUIInstaller:
             result = self.run_command(["git", "clone", repo_url, str(target_dir)], capture=True)
             return result.returncode == 0
     
+    def setup_workflows_symlink(self) -> bool:
+        """创建 ComfyUI/user/default/workflows 目录并软链接到项目根目录的 workflows"""
+        try:
+            # ComfyUI 的工作流目录
+            comfyui_workflows_dir = self.comfyui_dir / "user" / "default" / "workflows"
+            # 项目根目录的 workflows 目录
+            project_workflows_dir = self.install_dir / "workflows"
+            
+            # 确保项目的 workflows 目录存在
+            project_workflows_dir.mkdir(parents=True, exist_ok=True)
+            
+            # 创建 ComfyUI/user/default 目录
+            comfyui_workflows_dir.parent.mkdir(parents=True, exist_ok=True)
+            
+            # 如果已存在，先删除
+            if comfyui_workflows_dir.exists() or comfyui_workflows_dir.is_symlink():
+                if comfyui_workflows_dir.is_symlink():
+                    comfyui_workflows_dir.unlink()
+                else:
+                    import shutil
+                    shutil.rmtree(comfyui_workflows_dir)
+            
+            # 创建软链接：ComfyUI/user/default/workflows -> ../../workflows
+            comfyui_workflows_dir.symlink_to(project_workflows_dir.resolve())
+            self.log(f"[green]Created symlink: {comfyui_workflows_dir} -> {project_workflows_dir}[/green]")
+            return True
+        except Exception as e:
+            self.log(f"[red]Failed to setup workflows symlink: {e}[/red]")
+            return False
+    
     def install_requirements(self) -> bool:
         """Install ComfyUI requirements"""
         if self.skip_deps:
@@ -622,6 +652,7 @@ class ComfyUIInstaller:
         # Calculate total steps
         steps = [
             ("Clone ComfyUI", lambda: self.clone_or_pull(self.COMFYUI_REPO, self.comfyui_dir, "ComfyUI")),
+            ("Setup workflows directory", self.setup_workflows_symlink),
             ("Install dependencies", self.install_requirements),
             ("Clone ComfyUI-Manager", lambda: self.clone_or_pull(self.MANAGER_REPO, self.manager_dir, "ComfyUI-Manager")),
             ("Clone Models-Downloader", lambda: self.clone_or_pull(self.MODELS_DOWNLOADER_REPO, self.models_downloader_dir, "Workflow-Models-Downloader")),

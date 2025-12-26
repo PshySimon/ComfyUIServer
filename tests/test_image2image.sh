@@ -2,7 +2,7 @@
 
 # 测试脚本：图生图接口
 # Base URL
-BASE_URL="https://u764-ba4a-97d7d8c3.singapore-a.gpuhub.com:8443"
+BASE_URL="https://u883-afb3-b74ef54b.singapore-a.gpuhub.com:8443"
 
 # 图片文件
 IMAGE_FILE="橘猫.jpg"

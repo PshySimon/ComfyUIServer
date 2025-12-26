@@ -263,7 +263,7 @@ class ModelDownloader:
             models: Dict[str, str] = {}
             
             # Model file extensions
-            model_extensions = ['.safetensors', '.ckpt', '.pth', '.pt', '.bin', '.onnx']
+            model_extensions = ['.safetensors', '.ckpt', '.pth', '.pt', '.bin', '.onnx', '.gguf']
             
             # Node types that load models and their widget index for model name
             # Format: 'NodeName': (widget_indices, directory_name)
@@ -271,6 +271,7 @@ class ModelDownloader:
                 'CheckpointLoaderSimple': ([0], 'checkpoints'),
                 'CheckpointLoader': ([0], 'checkpoints'),
                 'UNETLoader': ([0], 'diffusion_models'),
+                'UnetLoaderGGUF': ([0], 'unet'),  # ComfyUI-GGUF 节点
                 'VAELoader': ([0], 'vae'),
                 'CLIPLoader': ([0], 'text_encoders'),
                 'LoraLoader': ([0], 'loras'),

@@ -886,7 +886,7 @@ def scan_workflows(workflows_dir: Path) -> List[Path]:
 def interactive_workflow_select(workflows_dir: Path, console: Console) -> Tuple[Optional[Path], bool]:
     """
     Show interactive menu to select workflow
-    Returns: (selected_workflow, download_models)
+    Returns: (selected_workflow, download_models) - download_models always True when workflow selected
     """
     workflows = scan_workflows(workflows_dir)
     
@@ -934,31 +934,14 @@ def interactive_workflow_select(workflows_dir: Path, console: Console) -> Tuple[
                 return None, False
             elif 1 <= idx <= len(workflows):
                 selected = workflows[idx - 1]
-                console.print(f"\n[green]✓ Selected: {selected.name}[/green]\n")
-                break
+                console.print(f"\n[green]✓ Selected: {selected.name}[/green]")
+                console.print("[dim]Will install custom nodes and download required models[/dim]\n")
+                # 选择工作流后直接下载模型，不再询问
+                return selected, True
             else:
                 console.print("[red]Invalid selection[/red]")
         except ValueError:
             console.print("[red]Please enter a number[/red]")
-        except KeyboardInterrupt:
-            console.print("\n[yellow]Cancelled[/yellow]")
-            sys.exit(0)
-    
-    # Ask about model download
-    console.print("[bold]Model Download Options:[/bold]")
-    console.print("  1. Install custom nodes only (faster)")
-    console.print("  2. Install custom nodes + download models (complete)")
-    console.print()
-    
-    while True:
-        try:
-            choice = console.input("[yellow]Select option (1-2): [/yellow]")
-            if choice == "1":
-                return selected, False
-            elif choice == "2":
-                return selected, True
-            else:
-                console.print("[red]Please enter 1 or 2[/red]")
         except KeyboardInterrupt:
             console.print("\n[yellow]Cancelled[/yellow]")
             sys.exit(0)

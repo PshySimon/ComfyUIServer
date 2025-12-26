@@ -116,6 +116,7 @@ workflows:
       image2: "image_24"            # 第二张图片（可选）
       image3: "image_26"            # 第三张图片（可选）
       prompt: "prompt_27"           # 编辑提示词
+      positive_prompt: "prompt_27"  # 编辑提示词（别名）
       seed: "seed_28"               # 随机种子
       steps: "steps_28"             # 采样步数
       cfg: "cfg_28"                 # CFG 强度
@@ -133,6 +134,7 @@ workflows:
       image2: "image_24"            # 第二张图片（可选）
       image3: "image_26"            # 第三张图片（可选）
       prompt: "prompt_27"           # 编辑提示词
+      positive_prompt: "prompt_27"  # 编辑提示词（别名）
       seed: "seed_28"               # 随机种子
       steps: "steps_28"             # 采样步数
       cfg: "cfg_28"                 # CFG 强度

@@ -1220,9 +1220,16 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
                     print(f"[DEBUG] 覆盖参数: {param_name} | {old_value} -> {new_value}")
                     node_data["inputs"][key] = new_value
         
-        # 处理未被覆盖的 LoadImage 节点：复用第一张图片
+        # 处理未被覆盖的 LoadImage 节点：复用第一张已传入的图片
         # 这样可以保持工作流的完整性，避免节点依赖问题
-        first_image = processed_params.get("image_1")
+        # 找到第一张已传入的图片
+        first_image = None
+        for key, value in processed_params.items():
+            if key.startswith("image_") and isinstance(value, str) and value:
+                first_image = value
+                print(f"[DEBUG] 找到第一张图片: {key} = {first_image}")
+                break
+        
         if first_image:
             for node_id, node_data in workflow_data.items():
                 if node_data.get("class_type") == "LoadImage":

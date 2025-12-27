@@ -1303,7 +1303,7 @@ class WorkflowParser:
         """获取常见节点类型的参数顺序"""
         common_mappings = {
             "KSampler": ["seed", "control_after_generate", "steps", "cfg", "sampler_name", "scheduler", "denoise"],
-            "KSamplerAdvanced": ["add_noise", "noise_seed", "steps", "cfg", "sampler_name", "scheduler", "start_at_step", "end_at_step", "return_with_leftover_noise"],
+            "KSamplerAdvanced": ["add_noise", "noise_seed", "control_after_generate", "steps", "cfg", "sampler_name", "scheduler", "start_at_step", "end_at_step", "return_with_leftover_noise"],
             "CheckpointLoaderSimple": ["ckpt_name"],
             "CLIPTextEncode": ["text"],
             "EmptyLatentImage": ["width", "height", "batch_size"],
@@ -1460,12 +1460,6 @@ class WorkflowExecutor:
                             raise ValueError(f"节点 {node_id} 依赖的节点 {ref_node_id} 未执行")
                     else:
                         inputs[key] = value
-                
-                # 调试：打印 KSamplerAdvanced 的所有输入参数类型
-                if class_type == "KSamplerAdvanced":
-                    print(f"[DEBUG] KSamplerAdvanced (ID: {node_id}) 输入参数:")
-                    for k, v in inputs.items():
-                        print(f"  {k}: {v} (type: {type(v).__name__})")
                 
                 # 检查函数签名，过滤掉函数不接受的参数
                 import inspect

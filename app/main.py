@@ -1231,6 +1231,9 @@ class WorkflowParser:
                             if value is not None:
                                 inp_type = widget_input_types.get(inp_name, "STRING")
                                 value = self._convert_value_type(value, inp_type)
+                                # VHS_VideoCombine 的 filename_prefix 需要解析日期占位符
+                                if inp_name == "filename_prefix" and isinstance(value, str):
+                                    value = resolve_vhs_date_format(value)
                                 inputs[inp_name] = value
                 else:
                     # 列表格式：按顺序分配 widgets_values 到 widget 输入

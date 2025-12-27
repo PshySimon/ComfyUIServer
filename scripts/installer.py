@@ -463,6 +463,88 @@ class ComfyUIInstaller:
         
         return None
     
+    def detect_missing_nodes_runtime(self) -> List[str]:
+        """
+        Load ComfyUI runtime and detect truly missing nodes by comparing
+        workflow nodes against actually loaded NODE_CLASS_MAPPINGS.
+        
+        This is the same method ComfyUI Manager GUI uses to detect missing nodes.
+        
+        Returns: List of node types that are in the workflow but not loaded.
+        """
+        if not self.workflow_file or not self.workflow_file.exists():
+            return []
+        
+        self.log("[dim]Loading ComfyUI to verify nodes...[/dim]")
+        
+        # Get workflow nodes
+        workflow_nodes = set(self.get_all_workflow_nodes())
+        if not workflow_nodes:
+            return []
+        
+        # Skip virtual/built-in nodes that don't need packages
+        skip_nodes = {'Reroute', 'Note', 'PrimitiveNode'}
+        workflow_nodes = workflow_nodes - skip_nodes
+        
+        try:
+            # Save current state
+            original_cwd = os.getcwd()
+            original_path = sys.path.copy()
+            original_argv = sys.argv.copy()
+            
+            # Setup ComfyUI environment
+            comfyui_path = str(self.comfyui_dir)
+            os.chdir(comfyui_path)
+            sys.path.insert(0, comfyui_path)
+            sys.argv = [sys.argv[0]]
+            
+            # Clear potentially conflicting modules
+            modules_to_remove = [k for k in sys.modules.keys() 
+                               if k.startswith('comfy') or k == 'nodes' or k == 'server' 
+                               or k == 'execution' or k.startswith('custom_nodes')]
+            for mod in modules_to_remove:
+                sys.modules.pop(mod, None)
+            
+            try:
+                # Initialize ComfyUI
+                from comfy.options import enable_args_parsing
+                enable_args_parsing()
+                
+                import asyncio
+                from nodes import init_extra_nodes, NODE_CLASS_MAPPINGS
+                
+                # Load all nodes including custom nodes
+                asyncio.get_event_loop().run_until_complete(init_extra_nodes(init_custom_nodes=True))
+                
+                # Get loaded nodes
+                loaded_nodes = set(NODE_CLASS_MAPPINGS.keys())
+                
+                # Find missing nodes
+                missing = workflow_nodes - loaded_nodes
+                
+                self.log(f"[dim]Workflow nodes: {len(workflow_nodes)}, Loaded: {len(loaded_nodes)}, Missing: {len(missing)}[/dim]")
+                
+                return list(missing)
+                
+            except Exception as e:
+                self.log(f"[yellow]Runtime check failed: {e}[/yellow]")
+                import traceback
+                traceback.print_exc()
+                return []
+            
+        finally:
+            # Restore original state
+            os.chdir(original_cwd)
+            sys.path = original_path
+            sys.argv = original_argv
+            
+            # Clean up loaded ComfyUI modules to avoid conflicts
+            modules_to_remove = [k for k in sys.modules.keys() 
+                               if k.startswith('comfy') or k == 'nodes' or k == 'server' 
+                               or k == 'execution']
+            for mod in modules_to_remove:
+                sys.modules.pop(mod, None)
+    
     def resolve_unknown_nodes(self, unknown_nodes: List[str]) -> Tuple[List[str], Dict[str, List[Dict]], List[str]]:
         """
         Resolve unknown nodes using official map and GitHub search.
@@ -789,6 +871,62 @@ class ComfyUIInstaller:
                     
                     # Update unknown_nodes to only truly unknown ones
                     self.unknown_nodes = still_unknown
+                
+                # Phase 4: Runtime verification - load ComfyUI and check for truly missing nodes
+                self.log("[cyan]Phase 4: Runtime verification...[/cyan]")
+                live.update(self.make_layout(progress))
+                
+                runtime_missing = self.detect_missing_nodes_runtime()
+                if runtime_missing:
+                    self.log(f"[yellow]Runtime check found {len(runtime_missing)} missing nodes[/yellow]")
+                    live.update(self.make_layout(progress))
+                    
+                    # Try to resolve and install missing nodes
+                    node_map = self.download_node_map()
+                    runtime_repos = set()
+                    runtime_unknown = []
+                    
+                    for node_type in runtime_missing:
+                        repos = self.find_all_repos_for_node(node_type, node_map)
+                        if repos:
+                            # Use package scoring to pick the best repo
+                            workflow_nodes = self.get_all_workflow_nodes()
+                            scores = self.build_package_scores(workflow_nodes, node_map)
+                            best_repo = max(repos, key=lambda r: scores.get(r, 0))
+                            if not self.is_node_installed(best_repo):
+                                runtime_repos.add(best_repo)
+                                self.log(f"[green]✓ Found {node_type} in {best_repo.split('/')[-1]}[/green]")
+                        else:
+                            runtime_unknown.append(node_type)
+                            self.log(f"[red]✗ No package found for {node_type}[/red]")
+                    
+                    live.update(self.make_layout(progress))
+                    
+                    # Install runtime-detected missing packages
+                    if runtime_repos:
+                        self.log(f"[green]Installing {len(runtime_repos)} packages from runtime check[/green]")
+                        runtime_task = progress.add_task(
+                            "[cyan]Installing runtime-detected packages...",
+                            total=len(runtime_repos)
+                        )
+                        
+                        for repo_url in runtime_repos:
+                            node_name = repo_url.split("/")[-1] if "/" in repo_url else repo_url
+                            progress.update(runtime_task, description=f"[cyan]Installing {node_name[:30]}...")
+                            live.update(self.make_layout(progress))
+                            
+                            self.install_custom_node(repo_url)
+                            progress.advance(runtime_task)
+                            live.update(self.make_layout(progress))
+                        
+                        progress.update(runtime_task, description="[green]✓ Runtime packages installed")
+                        live.update(self.make_layout(progress))
+                    
+                    # Add runtime unknown nodes to the list
+                    self.unknown_nodes.extend(runtime_unknown)
+                else:
+                    self.log("[green]✓ Runtime check passed - all nodes available[/green]")
+                    live.update(self.make_layout(progress))
         
         self.show_summary()
         return len(self.failed_nodes) == 0

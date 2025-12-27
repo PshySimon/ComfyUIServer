@@ -1461,6 +1461,12 @@ class WorkflowExecutor:
                     else:
                         inputs[key] = value
                 
+                # 调试：打印 KSamplerAdvanced 的所有输入参数类型
+                if class_type == "KSamplerAdvanced":
+                    print(f"[DEBUG] KSamplerAdvanced (ID: {node_id}) 输入参数:")
+                    for k, v in inputs.items():
+                        print(f"  {k}: {v} (type: {type(v).__name__})")
+                
                 # 检查函数签名，过滤掉函数不接受的参数
                 import inspect
                 sig = inspect.signature(func)

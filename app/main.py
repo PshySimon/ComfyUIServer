@@ -1063,17 +1063,20 @@ class WorkflowParser:
             if not node_type:
                 continue
             
-            # 注意：不再跳过 bypass 节点，因为下游节点可能依赖它们
-            # 我们会在执行前用有效图片替换未使用的 LoadImage 节点的输入
+            # 跳过 muted 节点（mode=2）
+            if node_mode == 2:
+                continue
             
             # 跳过 Reroute 和 Note 等辅助节点
             if node_type in ("Reroute", "Note", "PrimitiveNode"):
                 continue
             
             inputs = {}
+            is_bypass = (node_mode == 4)  # bypass 模式
             
             # 处理 widgets_values（静态参数值）
-            widgets_values = node.get("widgets_values", [])
+            # 对于 bypass 节点，不处理 widget 值，只处理连接
+            widgets_values = node.get("widgets_values", []) if not is_bypass else []
             
             # 处理 inputs（连接的输入）
             node_inputs = node.get("inputs", [])

@@ -1451,7 +1451,11 @@ class WorkflowExecutor:
                         # 转换阶段已经处理了透传节点，这里直接获取结果
                         ref_node_id, output_index = str(value[0]), value[1]
                         if ref_node_id in executed:
-                            inputs[key] = self.get_value_at_index(executed[ref_node_id], output_index)
+                            result_value = self.get_value_at_index(executed[ref_node_id], output_index)
+                            # 如果结果是字符串但看起来像整数，转换为整数
+                            if isinstance(result_value, str) and result_value.lstrip('-').isdigit():
+                                result_value = int(result_value)
+                            inputs[key] = result_value
                         else:
                             raise ValueError(f"节点 {node_id} 依赖的节点 {ref_node_id} 未执行")
                     else:

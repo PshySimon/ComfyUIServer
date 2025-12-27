@@ -216,9 +216,48 @@ def process_image_input(value: Any) -> str:
 
 def generate_output_url(filename: str, subfolder: str = "") -> str:
     """生成输出文件的相对路径"""
+    # 解析 VHS 插件的日期占位符
+    filename = resolve_vhs_date_format(filename)
+    subfolder = resolve_vhs_date_format(subfolder)
+    
     if subfolder:
         return f"/output/{subfolder}/{filename}"
     return f"/output/{filename}"
+
+
+def resolve_vhs_date_format(text: str) -> str:
+    """解析 VHS 插件的日期格式占位符
+    
+    VHS 插件使用 %date:format% 语法，例如：
+    - %date:yyyy-MM-dd% -> 2025-12-27
+    - %date:hhmmss% -> 143052
+    - %date:HHmmss% -> 143052
+    """
+    import re
+    
+    now = datetime.now()
+    
+    def replace_date(match):
+        fmt = match.group(1)
+        # 转换 VHS 格式到 Python strftime 格式
+        # VHS 使用 Java/C# 风格的格式
+        py_fmt = fmt
+        py_fmt = py_fmt.replace('yyyy', '%Y')
+        py_fmt = py_fmt.replace('yy', '%y')
+        py_fmt = py_fmt.replace('MM', '%m')
+        py_fmt = py_fmt.replace('dd', '%d')
+        py_fmt = py_fmt.replace('HH', '%H')
+        py_fmt = py_fmt.replace('hh', '%H')  # VHS 中 hh 也是 24 小时制
+        py_fmt = py_fmt.replace('mm', '%M')
+        py_fmt = py_fmt.replace('ss', '%S')
+        
+        try:
+            return now.strftime(py_fmt)
+        except:
+            return match.group(0)  # 解析失败时返回原文
+    
+    # 匹配 %date:xxx% 格式
+    return re.sub(r'%date:([^%]+)%', replace_date, text)
 
 # ============================================================================
 # 任务管理

@@ -1342,6 +1342,11 @@ class WorkflowExecutor:
         "PrimitiveNode",
     }
     
+    # 已废弃的 NOP 节点，直接传递输入到输出
+    DEPRECATED_NOP_NODES = {
+        "wanBlockSwap",  # ComfyUI 已废弃，直接传递 model
+    }
+    
     def execute(self, workflow_data: Dict, load_order: List, params: Dict = None,
                 progress_tracker: ProgressTracker = None) -> Dict:
         """执行工作流
@@ -1365,6 +1370,19 @@ class WorkflowExecutor:
                 # 跳过 UI 辅助节点
                 if class_type in self.UI_HELPER_NODES:
                     print(f"[DEBUG] 跳过 UI 辅助节点: {class_type} (ID: {node_id})")
+                    continue
+                
+                # 处理已废弃的 NOP 节点：直接传递输入到输出
+                if class_type in self.DEPRECATED_NOP_NODES:
+                    print(f"[DEBUG] 处理废弃节点: {class_type} (ID: {node_id})，直接传递输入")
+                    # 获取第一个连接的输入并直接作为输出
+                    for key, value in node_data.get("inputs", {}).items():
+                        if isinstance(value, list) and len(value) == 2:
+                            ref_node_id, output_index = str(value[0]), value[1]
+                            if ref_node_id in executed:
+                                # 直接传递上游节点的输出
+                                executed[node_id] = executed[ref_node_id]
+                                break
                     continue
                 
                 if class_type not in self.node_mappings:

@@ -372,11 +372,15 @@ class ComfyUIInstaller:
         - If 2-3 packages provide a node: each gets +1 point
         - If >3 packages provide a node: no points (too ambiguous)
         - Pattern-matched packages get +2 bonus (they're more specific)
+        - Packages with more nodes get bonus (more complete/maintained)
         
         Returns: Dict mapping repo_url to score
         """
         import re
         scores: Dict[str, int] = {}
+        
+        # Pre-calculate package sizes for bonus scoring
+        package_sizes = {url: len(node_list) for url, (node_list, _) in node_map.items()}
         
         for node_type in workflow_nodes:
             repos = []
@@ -408,6 +412,17 @@ class ComfyUIInstaller:
             # Bonus for pattern-matched repos (they're more specific)
             for repo in pattern_matched_repos:
                 scores[repo] = scores.get(repo, 0) + 2
+        
+        # Bonus for larger packages (more complete/maintained)
+        # Packages with 100+ nodes get +5, 50+ get +3, 20+ get +1
+        for repo_url in scores:
+            size = package_sizes.get(repo_url, 0)
+            if size >= 100:
+                scores[repo_url] += 5
+            elif size >= 50:
+                scores[repo_url] += 3
+            elif size >= 20:
+                scores[repo_url] += 1
         
         return scores
     

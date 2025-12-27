@@ -431,8 +431,8 @@ class ModelDownloader:
                 hf_info.directory = expected_category
             return hf_info
         
-        # 4. Try web search (DuckDuckGo) as last resort
-        update_status(f"Web searching (DuckDuckGo): {model_name[:35]}...")
+        # 4. Try web search (Brave Search) as last resort
+        update_status(f"Web searching (Brave Search): {model_name[:35]}...")
         web_info = self.search_web_for_huggingface(model_name, status_callback=status_callback)
         if web_info:
             if expected_category and expected_category != 'input':
@@ -441,8 +441,31 @@ class ModelDownloader:
         
         return None
     
+    # 常见浏览器 User-Agent 列表，用于随机选择避免被识别
+    USER_AGENTS = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    ]
+    
+    def _get_browser_headers(self) -> Dict[str, str]:
+        """获取模拟浏览器的请求头"""
+        import random
+        return {
+            'User-Agent': random.choice(self.USER_AGENTS),
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            # 注意：不要设置 Accept-Encoding: gzip，urllib 不会自动解压
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+        }
+    
     def search_web_for_huggingface(self, model_name: str, status_callback=None) -> Optional[ModelInfo]:
-        """使用 DuckDuckGo 搜索 HuggingFace 上的模型"""
+        """使用 Brave Search 搜索 HuggingFace 上的模型（比 DuckDuckGo 更稳定）"""
         def update_status(msg):
             if status_callback:
                 status_callback(f"[bold cyan]{msg}[/bold cyan]")
@@ -450,39 +473,34 @@ class ModelDownloader:
         # 提取纯文件名用于搜索（去掉子目录）
         filename = get_model_filename(model_name)
         
-        update_status(f"DuckDuckGo: searching {filename[:30]}...")
+        update_status(f"Brave Search: searching {filename[:30]}...")
         
         try:
             import re
+            import random
             
-            # 构建搜索查询，限定在 huggingface.co，包含完整文件名
-            query = f"site:huggingface.co \"{filename}\""
+            # 随机延迟 0.5-1.5 秒，避免请求过快
+            time.sleep(random.uniform(0.5, 1.5))
             
-            # 使用 DuckDuckGo Lite 版本（返回实际链接）
-            search_url = f"https://lite.duckduckgo.com/lite/?q={urllib.parse.quote(query)}"
+            # 构建搜索查询，限定在 huggingface.co
+            query = f"site:huggingface.co {filename}"
+            
+            # 使用 Brave Search（比 DuckDuckGo 更稳定，不容易被人机验证拦截）
+            search_url = f"https://search.brave.com/search?q={urllib.parse.quote(query)}"
             req = urllib.request.Request(
                 search_url,
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                }
+                headers=self._get_browser_headers()
             )
             
             with urllib.request.urlopen(req, timeout=15) as response:
                 html = response.read().decode('utf-8', errors='ignore')
                 
-                # DuckDuckGo Lite 返回的链接格式: uddg=URL_ENCODED_LINK
-                uddg_pattern = r'uddg=([^&"\'<>\s]+)'
-                uddg_matches = re.findall(uddg_pattern, html)
+                # Brave Search 直接返回 HuggingFace 链接
+                hf_pattern = r'href="(https://huggingface\.co/[^"]+)"'
+                hf_urls = re.findall(hf_pattern, html)
                 
-                # 解码并提取 HuggingFace 链接
-                hf_urls = []
-                for encoded_url in uddg_matches:
-                    try:
-                        decoded_url = urllib.parse.unquote(encoded_url)
-                        if 'huggingface.co' in decoded_url:
-                            hf_urls.append(decoded_url)
-                    except:
-                        continue
+                # 去重
+                hf_urls = list(dict.fromkeys(hf_urls))
                 
                 # 猜测目录
                 directory = self._guess_model_directory(model_name)
@@ -530,7 +548,7 @@ class ModelDownloader:
                 
                 # 在找到的仓库中搜索文件
                 for repo_id in repos:
-                    update_status(f"DuckDuckGo: checking {repo_id[:35]}...")
+                    update_status(f"Brave Search: checking {repo_id[:35]}...")
                     found_url = self._search_repo_for_file(repo_id, filename)
                     if found_url:
                         return ModelInfo(

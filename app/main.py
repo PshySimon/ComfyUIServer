@@ -232,6 +232,298 @@ class TaskStatus(str, Enum):
     FAILED = "failed"
 
 
+# ============================================================================
+# 节点执行时间统计
+# ============================================================================
+
+class NodeTimingStats:
+    """节点执行时间统计 - 用于预测工作流执行时间"""
+    
+    def __init__(self, db_conn: sqlite3.Connection):
+        self.conn = db_conn
+        self.lock = threading.RLock()
+        self._init_table()
+        self._cache: Dict[str, Dict] = {}  # class_type -> {avg_time, count}
+        self._load_cache()
+    
+    def _init_table(self):
+        with self.conn:
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS node_timing_stats (
+                    class_type TEXT PRIMARY KEY,
+                    total_time_ms REAL DEFAULT 0,
+                    execution_count INTEGER DEFAULT 0,
+                    avg_time_ms REAL DEFAULT 0,
+                    min_time_ms REAL DEFAULT 0,
+                    max_time_ms REAL DEFAULT 0,
+                    last_updated TEXT
+                )
+            """)
+    
+    def _load_cache(self):
+        """加载统计数据到内存缓存"""
+        with self.lock:
+            rows = self.conn.execute(
+                "SELECT class_type, avg_time_ms, execution_count FROM node_timing_stats"
+            ).fetchall()
+            for row in rows:
+                self._cache[row[0]] = {
+                    "avg_time": row[1],
+                    "count": row[2]
+                }
+    
+    def record_execution(self, class_type: str, execution_time_ms: float):
+        """记录一次节点执行时间"""
+        with self.lock:
+            now = datetime.now().isoformat()
+            
+            # 获取现有数据
+            row = self.conn.execute(
+                "SELECT total_time_ms, execution_count, min_time_ms, max_time_ms FROM node_timing_stats WHERE class_type = ?",
+                (class_type,)
+            ).fetchone()
+            
+            if row:
+                total_time = row[0] + execution_time_ms
+                count = row[1] + 1
+                min_time = min(row[2], execution_time_ms) if row[2] > 0 else execution_time_ms
+                max_time = max(row[3], execution_time_ms)
+                avg_time = total_time / count
+                
+                self.conn.execute("""
+                    UPDATE node_timing_stats 
+                    SET total_time_ms = ?, execution_count = ?, avg_time_ms = ?,
+                        min_time_ms = ?, max_time_ms = ?, last_updated = ?
+                    WHERE class_type = ?
+                """, (total_time, count, avg_time, min_time, max_time, now, class_type))
+            else:
+                self.conn.execute("""
+                    INSERT INTO node_timing_stats 
+                    (class_type, total_time_ms, execution_count, avg_time_ms, min_time_ms, max_time_ms, last_updated)
+                    VALUES (?, ?, 1, ?, ?, ?, ?)
+                """, (class_type, execution_time_ms, execution_time_ms, execution_time_ms, execution_time_ms, now))
+                count = 1
+                avg_time = execution_time_ms
+            
+            self.conn.commit()
+            
+            # 更新缓存
+            self._cache[class_type] = {"avg_time": avg_time, "count": count}
+    
+    def get_estimated_time(self, class_type: str) -> float:
+        """获取节点的预估执行时间（毫秒）"""
+        with self.lock:
+            if class_type in self._cache:
+                return self._cache[class_type]["avg_time"]
+            
+            # 对于未知节点，返回默认值
+            # 根据节点类型给出合理的默认估计
+            default_times = {
+                "KSampler": 30000,           # 采样器通常较慢
+                "KSamplerAdvanced": 30000,
+                "SamplerCustom": 30000,
+                "VAEDecode": 2000,           # VAE 解码
+                "VAEEncode": 2000,
+                "CheckpointLoaderSimple": 5000,  # 模型加载
+                "LoraLoader": 1000,
+                "CLIPTextEncode": 500,
+                "SaveImage": 500,
+                "LoadImage": 200,
+            }
+            
+            # 检查是否匹配已知模式
+            for pattern, default_time in default_times.items():
+                if pattern in class_type:
+                    return default_time
+            
+            return 1000  # 默认 1 秒
+    
+    def estimate_workflow_time(self, load_order: List[Tuple[str, Dict]]) -> float:
+        """预估整个工作流的执行时间（毫秒）"""
+        total_time = 0
+        for node_id, node_data in load_order:
+            class_type = node_data.get("class_type", "")
+            if class_type:
+                total_time += self.get_estimated_time(class_type)
+        return total_time
+    
+    def get_stats_summary(self) -> Dict:
+        """获取统计摘要"""
+        with self.lock:
+            return {
+                class_type: {
+                    "avg_time_ms": info["avg_time"],
+                    "count": info["count"]
+                }
+                for class_type, info in self._cache.items()
+            }
+
+
+# ============================================================================
+# 进度追踪器
+# ============================================================================
+
+class ProgressTracker:
+    """任务进度追踪器 - 支持步骤级进度"""
+    
+    def __init__(self, task_id: str, load_order: List[Tuple[str, Dict]], timing_stats: NodeTimingStats):
+        self.task_id = task_id
+        self.load_order = load_order
+        self.timing_stats = timing_stats
+        
+        self.total_nodes = len(load_order)
+        self.completed_nodes = 0
+        self.current_node_id: Optional[str] = None
+        self.current_node_type: Optional[str] = None
+        self.current_node_start_time: Optional[float] = None
+        
+        # 步骤级进度（来自 ComfyUI hook）
+        self.current_step = 0
+        self.total_steps = 0
+        self.step_node_id: Optional[str] = None  # 正在报告步骤的节点
+        
+        # 时间追踪
+        self.start_time = time.time()
+        self.elapsed_ms = 0
+        self.estimated_total_ms = timing_stats.estimate_workflow_time(load_order)
+        
+        # 节点执行记录
+        self.node_times: Dict[str, float] = {}  # node_id -> execution_time_ms
+        
+        # 用于动态校准的数据
+        self.first_sampler_time: Optional[float] = None  # 第一个采样器的实际时间
+        self.first_sampler_steps: Optional[int] = None   # 第一个采样器的步数
+    
+    def start_node(self, node_id: str, class_type: str):
+        """开始执行节点"""
+        self.current_node_id = node_id
+        self.current_node_type = class_type
+        self.current_node_start_time = time.time()
+        # 重置步骤进度
+        self.current_step = 0
+        self.total_steps = 0
+    
+    def finish_node(self, node_id: str, class_type: str):
+        """完成节点执行"""
+        if self.current_node_start_time:
+            execution_time_ms = (time.time() - self.current_node_start_time) * 1000
+            self.node_times[node_id] = execution_time_ms
+            self.elapsed_ms += execution_time_ms
+            
+            # 记录到统计数据库
+            self.timing_stats.record_execution(class_type, execution_time_ms)
+            
+            # 如果是采样器节点，记录用于校准
+            if "Sampler" in class_type and self.first_sampler_time is None:
+                self.first_sampler_time = execution_time_ms
+                self.first_sampler_steps = self.total_steps if self.total_steps > 0 else 1
+        
+        self.completed_nodes += 1
+        self.current_node_id = None
+        self.current_node_type = None
+        self.current_node_start_time = None
+        self.current_step = 0
+        self.total_steps = 0
+    
+    def update_step_progress(self, value: int, total: int, node_id: str = None):
+        """更新步骤级进度（由 ComfyUI hook 调用）"""
+        self.current_step = value
+        self.total_steps = total
+        if node_id:
+            self.step_node_id = node_id
+    
+    def get_progress(self) -> Dict:
+        """获取当前进度信息"""
+        now = time.time()
+        total_elapsed = (now - self.start_time) * 1000
+        
+        # 计算当前节点内的进度
+        node_progress = 0
+        if self.total_steps > 0:
+            node_progress = self.current_step / self.total_steps
+        
+        # 计算整体进度
+        # 方法：已完成节点 + 当前节点的部分进度
+        if self.total_nodes > 0:
+            base_progress = self.completed_nodes / self.total_nodes
+            current_node_weight = 1 / self.total_nodes
+            progress = base_progress + (node_progress * current_node_weight)
+        else:
+            progress = 0
+        
+        # 计算剩余时间
+        remaining_ms = self._estimate_remaining_time(node_progress)
+        
+        return {
+            "progress": round(progress * 100, 1),  # 百分比
+            "completed_nodes": self.completed_nodes,
+            "total_nodes": self.total_nodes,
+            "current_node": self.current_node_type,
+            "current_step": self.current_step,
+            "total_steps": self.total_steps,
+            "elapsed_seconds": round(total_elapsed / 1000, 1),
+            "estimated_remaining_seconds": round(remaining_ms / 1000),
+        }
+    
+    def _estimate_remaining_time(self, current_node_progress: float) -> float:
+        """估算剩余时间（毫秒）"""
+        remaining_ms = 0
+        
+        # 1. 当前节点的剩余时间
+        if self.current_node_type and self.current_node_start_time:
+            current_elapsed = (time.time() - self.current_node_start_time) * 1000
+            
+            if current_node_progress > 0.05:  # 有足够进度时用实际数据推算
+                # 根据已用时间和进度推算总时间
+                estimated_node_total = current_elapsed / current_node_progress
+                remaining_ms += max(0, estimated_node_total - current_elapsed)
+            else:
+                # 进度太少，用历史数据
+                estimated_node_total = self.timing_stats.get_estimated_time(self.current_node_type)
+                remaining_ms += max(0, estimated_node_total - current_elapsed)
+        
+        # 2. 剩余节点的时间
+        for i in range(self.completed_nodes + 1, self.total_nodes):
+            if i < len(self.load_order):
+                node_id, node_data = self.load_order[i]
+                class_type = node_data.get("class_type", "")
+                if class_type:
+                    # 如果有校准数据，用校准后的时间
+                    if self.first_sampler_time and "Sampler" in class_type:
+                        # 假设同类型采样器时间相近
+                        remaining_ms += self.first_sampler_time
+                    else:
+                        remaining_ms += self.timing_stats.get_estimated_time(class_type)
+        
+        return remaining_ms
+
+
+# 全局进度追踪器存储
+_progress_trackers: Dict[str, ProgressTracker] = {}
+_progress_lock = threading.RLock()
+
+
+def get_task_progress(task_id: str) -> Optional[Dict]:
+    """获取任务进度"""
+    with _progress_lock:
+        tracker = _progress_trackers.get(task_id)
+        if tracker:
+            return tracker.get_progress()
+    return None
+
+
+def set_task_progress_tracker(task_id: str, tracker: ProgressTracker):
+    """设置任务进度追踪器"""
+    with _progress_lock:
+        _progress_trackers[task_id] = tracker
+
+
+def remove_task_progress_tracker(task_id: str):
+    """移除任务进度追踪器"""
+    with _progress_lock:
+        _progress_trackers.pop(task_id, None)
+
+
 class TaskManager:
     """任务管理器 - 带队列管理"""
 
@@ -243,6 +535,9 @@ class TaskManager:
         self.conn.row_factory = sqlite3.Row
         self._init_table()
         self._load_pending_tasks()
+        
+        # 初始化节点时间统计
+        self.timing_stats = NodeTimingStats(self.conn)
 
     def _init_table(self):
         with self.conn:
@@ -828,19 +1123,32 @@ class WorkflowParser:
                         widget_input_names.append(inp_name)
                         widget_input_types[inp_name] = inp.get("type", "STRING")
                 
-                # 按顺序分配 widgets_values 到 widget 输入
-                for i, inp_name in enumerate(widget_input_names):
-                    if i >= len(widgets_values):
-                        break
-                    # 如果这个输入已经通过连接设置了，跳过赋值但不跳过索引
-                    if inp_name in inputs:
-                        continue
-                    value = normalize_path(widgets_values[i])
-                    if value is not None:
-                        # 根据类型进行转换
-                        inp_type = widget_input_types.get(inp_name, "STRING")
-                        value = self._convert_value_type(value, inp_type)
-                        inputs[inp_name] = value
+                # 处理 widgets_values - 可能是列表或字典
+                if isinstance(widgets_values, dict):
+                    # 字典格式：直接按名称获取值（某些节点如 VHS_VideoCombine 使用此格式）
+                    for inp_name in widget_input_names:
+                        if inp_name in inputs:
+                            continue
+                        if inp_name in widgets_values:
+                            value = normalize_path(widgets_values[inp_name])
+                            if value is not None:
+                                inp_type = widget_input_types.get(inp_name, "STRING")
+                                value = self._convert_value_type(value, inp_type)
+                                inputs[inp_name] = value
+                else:
+                    # 列表格式：按顺序分配 widgets_values 到 widget 输入
+                    for i, inp_name in enumerate(widget_input_names):
+                        if i >= len(widgets_values):
+                            break
+                        # 如果这个输入已经通过连接设置了，跳过赋值但不跳过索引
+                        if inp_name in inputs:
+                            continue
+                        value = normalize_path(widgets_values[i])
+                        if value is not None:
+                            # 根据类型进行转换
+                            inp_type = widget_input_types.get(inp_name, "STRING")
+                            value = self._convert_value_type(value, inp_type)
+                            inputs[inp_name] = value
             
             # 如果 inputs 数组中没有 widget 定义，但有 widgets_values
             # 需要从 NODE_CLASS_MAPPINGS 获取参数定义
@@ -1031,8 +1339,16 @@ class WorkflowExecutor:
         "PrimitiveNode",
     }
     
-    def execute(self, workflow_data: Dict, load_order: List, params: Dict = None) -> Dict:
-        """执行工作流"""
+    def execute(self, workflow_data: Dict, load_order: List, params: Dict = None,
+                progress_tracker: ProgressTracker = None) -> Dict:
+        """执行工作流
+        
+        Args:
+            workflow_data: 工作流数据
+            load_order: 节点执行顺序
+            params: 参数覆盖
+            progress_tracker: 进度追踪器（可选）
+        """
         params = params or {}
         executed = {}  # node_id -> result
         initialized = {}  # class_type -> instance
@@ -1050,6 +1366,10 @@ class WorkflowExecutor:
                 
                 if class_type not in self.node_mappings:
                     raise ValueError(f"未找到节点类型: {class_type}")
+                
+                # 通知进度追踪器：开始执行节点
+                if progress_tracker:
+                    progress_tracker.start_node(node_id, class_type)
                 
                 # 获取或创建节点实例
                 if class_type not in initialized:
@@ -1091,7 +1411,15 @@ class WorkflowExecutor:
                 try:
                     result = func(**inputs)
                     executed[node_id] = result
+                    
+                    # 通知进度追踪器：节点执行完成
+                    if progress_tracker:
+                        progress_tracker.finish_node(node_id, class_type)
+                        
                 except Exception as e:
+                    # 即使失败也要通知进度追踪器
+                    if progress_tracker:
+                        progress_tracker.finish_node(node_id, class_type)
                     raise RuntimeError(f"执行节点 {class_type} (ID: {node_id}) 失败: {e}")
         
         return executed
@@ -1133,6 +1461,15 @@ class TaskStatusResponse(BaseModel):
     created_at: str
     result: Optional[Dict] = None
     error: Optional[str] = None
+    # 进度信息
+    progress: Optional[float] = None  # 进度百分比 0-100
+    completed_nodes: Optional[int] = None
+    total_nodes: Optional[int] = None
+    current_node: Optional[str] = None  # 当前执行的节点类型
+    current_step: Optional[int] = None  # 当前节点的步骤（如采样步数）
+    total_steps: Optional[int] = None   # 当前节点的总步骤
+    elapsed_seconds: Optional[float] = None  # 已用时间（秒）
+    estimated_remaining_seconds: Optional[int] = None  # 预估剩余时间（秒）
 
 
 # 图片上传接口
@@ -1165,6 +1502,7 @@ async def upload_image(file: UploadFile = File(...)):
 
 def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, params: Dict):
     """在后台线程中执行工作流任务 - 使用 ComfyUI-SaveAsScript 官方方式"""
+    progress_tracker = None
     try:
         task_manager.update_task(task_id, status=TaskStatus.PROCESSING)
         
@@ -1264,6 +1602,26 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
         load_order = parser.determine_load_order()
         print(f"[DEBUG] 执行顺序: {[node_id for node_id, _ in load_order]}")
         
+        # 创建进度追踪器
+        progress_tracker = ProgressTracker(task_id, load_order, task_manager.timing_stats)
+        set_task_progress_tracker(task_id, progress_tracker)
+        
+        # 设置 ComfyUI 进度 hook（获取步骤级进度）
+        try:
+            import comfy.utils
+            def progress_hook(value, total, preview_image=None, prompt_id=None, node_id=None):
+                """ComfyUI 进度回调"""
+                if progress_tracker:
+                    progress_tracker.update_step_progress(value, total, node_id)
+            comfy.utils.set_progress_bar_global_hook(progress_hook)
+            print("[DEBUG] 已设置 ComfyUI 进度 hook")
+        except Exception as e:
+            print(f"[WARNING] 设置进度 hook 失败: {e}")
+        
+        # 打印预估时间
+        estimated_time = progress_tracker.estimated_total_ms / 1000
+        print(f"[DEBUG] 预估执行时间: {estimated_time:.1f} 秒")
+        
         # 创建执行器并执行
         executor = WorkflowExecutor(NODE_CLASS_MAPPINGS)
         
@@ -1273,7 +1631,8 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
         try:
             print("[DEBUG] 开始执行工作流...")
             sys.stdout.flush()
-            results = executor.execute(workflow_data, load_order, processed_params)
+            results = executor.execute(workflow_data, load_order, processed_params, 
+                                       progress_tracker=progress_tracker)
             print("[DEBUG] 工作流执行完成")
             sys.stdout.flush()
         except Exception as exec_error:
@@ -1282,6 +1641,13 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
             traceback.print_exc()
             sys.stdout.flush()
             raise
+        finally:
+            # 清除 hook
+            try:
+                import comfy.utils
+                comfy.utils.set_progress_bar_global_hook(None)
+            except:
+                pass
         
         # 提取输出文件
         output_files = []
@@ -1323,6 +1689,9 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
                                     "url": generate_output_url(filename, subfolder)
                                 })
         
+        # 获取最终进度信息
+        final_progress = progress_tracker.get_progress() if progress_tracker else {}
+        
         task_manager.update_task(
             task_id,
             status=TaskStatus.COMPLETED,
@@ -1331,6 +1700,7 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
                 "outputs": output_results,
                 "image_urls": [{"url": f["url"]} for f in output_files if f["type"] == "image"],
                 "video_urls": [{"url": f["url"]} for f in output_files if f["type"] == "video"],
+                "execution_time_ms": final_progress.get("elapsed_ms", 0),
             }
         )
         
@@ -1338,6 +1708,9 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
         import traceback
         traceback.print_exc()
         task_manager.update_task(task_id, status=TaskStatus.FAILED, error=str(e))
+    finally:
+        # 清理进度追踪器
+        remove_task_progress_tracker(task_id)
 
 
 # 存储已注册的工作流
@@ -1542,9 +1915,32 @@ async def root():
             "/upload": "POST - 上传图片",
             "/workflow/{name}": "POST - 执行工作流",
             "/workflow/{name}/params": "GET - 查看工作流可用参数",
-            "/task/{task_id}": "GET - 查询任务状态",
+            "/task/{task_id}": "GET - 查询任务状态（含进度信息）",
             "/output/{path}": "GET - 下载输出文件",
+            "/stats/nodes": "GET - 查看节点执行时间统计",
         }
+    }
+
+
+@app.get("/stats/nodes")
+async def get_node_stats():
+    """获取节点执行时间统计数据
+    
+    返回各节点类型的平均执行时间，用于进度预测
+    """
+    stats = task_manager.timing_stats.get_stats_summary()
+    
+    # 按平均时间排序
+    sorted_stats = dict(sorted(
+        stats.items(), 
+        key=lambda x: x[1]["avg_time_ms"], 
+        reverse=True
+    ))
+    
+    return {
+        "message": "节点执行时间统计（用于进度预测）",
+        "total_node_types": len(sorted_stats),
+        "stats": sorted_stats
     }
 
 
@@ -1621,10 +2017,19 @@ async def get_task_status(task_id: str):
     queue_position = None
     queue_total = None
     
+    # 进度信息
+    progress_info = {}
+    
     # 如果任务在队列中，返回队列位置
     if status in (TaskStatus.QUEUED, TaskStatus.PROCESSING):
         queue_position = task_manager.get_queue_position(task_id)
         queue_total = task_manager.get_queue_total()
+        
+        # 如果正在处理，获取进度信息
+        if status == TaskStatus.PROCESSING:
+            progress_data = get_task_progress(task_id)
+            if progress_data:
+                progress_info = progress_data
     
     return TaskStatusResponse(
         task_id=task_id,
@@ -1635,6 +2040,15 @@ async def get_task_status(task_id: str):
         created_at=task["created_at"],
         result=task.get("result"),
         error=task.get("error"),
+        # 进度信息
+        progress=progress_info.get("progress"),
+        completed_nodes=progress_info.get("completed_nodes"),
+        total_nodes=progress_info.get("total_nodes"),
+        current_node=progress_info.get("current_node"),
+        current_step=progress_info.get("current_step"),
+        total_steps=progress_info.get("total_steps"),
+        elapsed_seconds=progress_info.get("elapsed_seconds"),
+        estimated_remaining_seconds=progress_info.get("estimated_remaining_seconds"),
     )
 
 

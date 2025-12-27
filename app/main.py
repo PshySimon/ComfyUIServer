@@ -2295,8 +2295,12 @@ async def image_to_video(request: ImageToVideoRequest):
     # 映射图片
     for i, img in enumerate(request.images, 1):
         key = f"image{i}"
+        # 优先使用 image1, image2 等格式，如果没有则尝试 image（单图场景）
         if key in input_mapping:
             images_dict[input_mapping[key]] = img
+        elif i == 1 and "image" in input_mapping:
+            # 单图场景：第一张图片映射到 image
+            images_dict[input_mapping["image"]] = img
         else:
             images_dict[key] = img
     

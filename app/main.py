@@ -1052,6 +1052,56 @@ class WorkflowParser:
                 link_id, from_node, from_slot, to_node, to_slot = link[:5]
                 link_map[link_id] = (from_node, from_slot)
         
+        # 构建节点 ID -> 节点数据的映射
+        node_map = {node.get("id"): node for node in nodes}
+        
+        # 透传节点类型（这些节点只是传递输入到输出，不做实际处理）
+        PASSTHROUGH_NODES = {"Reroute", "wanBlockSwap"}
+        
+        def trace_real_source(node_id: int, from_slot: int) -> tuple:
+            """追踪到真正的来源节点（跳过透传节点）
+            
+            Args:
+                node_id: 起始节点 ID
+                from_slot: 起始输出槽位
+                
+            Returns:
+                (real_node_id, real_slot) 或 (None, None)
+            """
+            visited = set()
+            current_id = node_id
+            current_slot = from_slot
+            
+            while current_id not in visited:
+                visited.add(current_id)
+                node = node_map.get(current_id)
+                if not node:
+                    return None, None
+                
+                node_type = node.get("type")
+                
+                # 如果不是透传节点，返回当前节点和槽位
+                if node_type not in PASSTHROUGH_NODES:
+                    return current_id, current_slot
+                
+                # 是透传节点，找到它的输入连接（透传节点通常只有一个输入）
+                node_inputs = node.get("inputs", [])
+                found = False
+                for inp in node_inputs:
+                    link_id = inp.get("link")
+                    if link_id and link_id in link_map:
+                        upstream_node, upstream_slot = link_map[link_id]
+                        current_id = upstream_node
+                        current_slot = upstream_slot  # 保留上游的输出槽位
+                        found = True
+                        break
+                
+                if not found:
+                    # 透传节点没有输入连接，返回 None
+                    return None, None
+            
+            return None, None  # 循环引用
+        
         # 构建节点输入类型映射（从 ComfyUI 节点定义获取）
         api_data = {}
         
@@ -1067,8 +1117,8 @@ class WorkflowParser:
             if node_mode == 2:
                 continue
             
-            # 跳过 Reroute 和 Note 等辅助节点
-            if node_type in ("Reroute", "Note", "PrimitiveNode"):
+            # 跳过透传节点（Reroute, wanBlockSwap 等）
+            if node_type in PASSTHROUGH_NODES or node_type in ("Note", "PrimitiveNode"):
                 continue
             
             inputs = {}
@@ -1086,7 +1136,12 @@ class WorkflowParser:
                 
                 if link_id is not None and link_id in link_map:
                     from_node, from_slot = link_map[link_id]
-                    inputs[inp_name] = [str(from_node), from_slot]
+                    # 追踪到真正的来源节点（跳过透传节点）
+                    real_source, real_slot = trace_real_source(from_node, from_slot)
+                    if real_source is not None:
+                        inputs[inp_name] = [str(real_source), real_slot]
+                    else:
+                        inputs[inp_name] = [str(from_node), from_slot]
             
             # 某些节点类型有隐藏的 widget 参数（如 KSampler 的 control_after_generate）
             # 这些参数不在 inputs 数组中，但在 widgets_values 中
@@ -1333,18 +1388,15 @@ class WorkflowExecutor:
             return obj[index]
         except KeyError:
             return obj.get("result", [None] * (index + 1))[index]
-    # UI 辅助节点，执行时应跳过
+    
+    # UI 辅助节点，执行时应跳过（这些节点在转换阶段已被过滤，但保留以防万一）
     UI_HELPER_NODES = {
         "Fast Groups Bypasser (rgthree)",
         "Fast Groups Muter (rgthree)",
         "Reroute",
         "Note",
         "PrimitiveNode",
-    }
-    
-    # 已废弃的 NOP 节点，直接传递输入到输出
-    DEPRECATED_NOP_NODES = {
-        "wanBlockSwap",  # ComfyUI 已废弃，直接传递 model
+        "wanBlockSwap",  # ComfyUI 已废弃的 NOP 节点
     }
     
     def execute(self, workflow_data: Dict, load_order: List, params: Dict = None,
@@ -1361,68 +1413,15 @@ class WorkflowExecutor:
         executed = {}  # node_id -> result
         initialized = {}  # class_type -> instance
         
-        # 构建节点数据映射，用于追踪连接
-        node_data_map = {str(nid): ndata for nid, ndata in load_order}
-        
-        def trace_executed_source(ref_node_id: str, output_index: int):
-            """追踪到已执行的真正来源节点（跳过 Reroute 等中间节点）"""
-            visited = set()
-            current_id = ref_node_id
-            current_index = output_index
-            
-            while current_id not in executed and current_id not in visited:
-                visited.add(current_id)
-                
-                # 获取当前节点数据
-                current_data = node_data_map.get(current_id)
-                if not current_data:
-                    break
-                
-                current_type = current_data.get("class_type", "")
-                
-                # 如果是 Reroute 或其他透传节点，继续追踪
-                if current_type in ("Reroute",) or current_type in self.DEPRECATED_NOP_NODES:
-                    # 找到第一个连接的输入
-                    found_upstream = False
-                    for key, value in current_data.get("inputs", {}).items():
-                        if isinstance(value, list) and len(value) == 2:
-                            current_id = str(value[0])
-                            current_index = value[1]
-                            found_upstream = True
-                            break
-                    
-                    if not found_upstream:
-                        break
-                else:
-                    break
-            
-            if current_id in executed:
-                return executed[current_id], current_index
-            return None, None
-        
         with torch.inference_mode():
             for node_id, node_data in load_order:
                 class_type = node_data.get("class_type")
                 if not class_type:
                     continue
                 
-                # 跳过 UI 辅助节点
+                # 跳过 UI 辅助节点和已废弃的 NOP 节点
                 if class_type in self.UI_HELPER_NODES:
-                    print(f"[DEBUG] 跳过 UI 辅助节点: {class_type} (ID: {node_id})")
-                    continue
-                
-                # 处理已废弃的 NOP 节点：直接传递输入到输出
-                if class_type in self.DEPRECATED_NOP_NODES:
-                    print(f"[DEBUG] 处理废弃节点: {class_type} (ID: {node_id})，直接传递输入")
-                    # 获取第一个连接的输入并直接作为输出
-                    for key, value in node_data.get("inputs", {}).items():
-                        if isinstance(value, list) and len(value) == 2:
-                            ref_node_id, output_index = str(value[0]), value[1]
-                            # 追踪到真正已执行的来源节点
-                            source_result, source_index = trace_executed_source(ref_node_id, output_index)
-                            if source_result is not None:
-                                executed[node_id] = source_result
-                                break
+                    print(f"[DEBUG] 跳过节点: {class_type} (ID: {node_id})")
                     continue
                 
                 if class_type not in self.node_mappings:
@@ -1449,11 +1448,12 @@ class WorkflowExecutor:
                         inputs[key] = params[param_name]
                     elif isinstance(value, list) and len(value) == 2:
                         # 节点引用: [node_id, output_index]
+                        # 转换阶段已经处理了透传节点，这里直接获取结果
                         ref_node_id, output_index = str(value[0]), value[1]
-                        # 追踪到真正已执行的来源节点（跳过 Reroute 等中间节点）
-                        source_result, source_index = trace_executed_source(ref_node_id, output_index)
-                        if source_result is not None:
-                            inputs[key] = self.get_value_at_index(source_result, source_index)
+                        if ref_node_id in executed:
+                            inputs[key] = self.get_value_at_index(executed[ref_node_id], output_index)
+                        else:
+                            raise ValueError(f"节点 {node_id} 依赖的节点 {ref_node_id} 未执行")
                     else:
                         inputs[key] = value
                 

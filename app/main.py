@@ -1361,6 +1361,45 @@ class WorkflowExecutor:
         executed = {}  # node_id -> result
         initialized = {}  # class_type -> instance
         
+        # 构建节点数据映射，用于追踪连接
+        node_data_map = {str(nid): ndata for nid, ndata in load_order}
+        
+        def trace_executed_source(ref_node_id: str, output_index: int):
+            """追踪到已执行的真正来源节点（跳过 Reroute 等中间节点）"""
+            visited = set()
+            current_id = ref_node_id
+            current_index = output_index
+            
+            while current_id not in executed and current_id not in visited:
+                visited.add(current_id)
+                
+                # 获取当前节点数据
+                current_data = node_data_map.get(current_id)
+                if not current_data:
+                    break
+                
+                current_type = current_data.get("class_type", "")
+                
+                # 如果是 Reroute 或其他透传节点，继续追踪
+                if current_type in ("Reroute",) or current_type in self.DEPRECATED_NOP_NODES:
+                    # 找到第一个连接的输入
+                    found_upstream = False
+                    for key, value in current_data.get("inputs", {}).items():
+                        if isinstance(value, list) and len(value) == 2:
+                            current_id = str(value[0])
+                            current_index = value[1]
+                            found_upstream = True
+                            break
+                    
+                    if not found_upstream:
+                        break
+                else:
+                    break
+            
+            if current_id in executed:
+                return executed[current_id], current_index
+            return None, None
+        
         with torch.inference_mode():
             for node_id, node_data in load_order:
                 class_type = node_data.get("class_type")
@@ -1379,9 +1418,10 @@ class WorkflowExecutor:
                     for key, value in node_data.get("inputs", {}).items():
                         if isinstance(value, list) and len(value) == 2:
                             ref_node_id, output_index = str(value[0]), value[1]
-                            if ref_node_id in executed:
-                                # 直接传递上游节点的输出
-                                executed[node_id] = executed[ref_node_id]
+                            # 追踪到真正已执行的来源节点
+                            source_result, source_index = trace_executed_source(ref_node_id, output_index)
+                            if source_result is not None:
+                                executed[node_id] = source_result
                                 break
                     continue
                 
@@ -1410,8 +1450,10 @@ class WorkflowExecutor:
                     elif isinstance(value, list) and len(value) == 2:
                         # 节点引用: [node_id, output_index]
                         ref_node_id, output_index = str(value[0]), value[1]
-                        if ref_node_id in executed:
-                            inputs[key] = self.get_value_at_index(executed[ref_node_id], output_index)
+                        # 追踪到真正已执行的来源节点（跳过 Reroute 等中间节点）
+                        source_result, source_index = trace_executed_source(ref_node_id, output_index)
+                        if source_result is not None:
+                            inputs[key] = self.get_value_at_index(source_result, source_index)
                     else:
                         inputs[key] = value
                 

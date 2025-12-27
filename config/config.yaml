@@ -124,4 +124,20 @@ workflows:
     outputs:
       image: "SaveImage"
 
+  # WAN2.2 RemixV2 图生视频工作流
+  # 基于 WAN2.2 模型的图生视频，支持高质量视频生成
+  - name: "wan22_remix_i2v"
+    type: ["image-to-video"]        # 工作流类型
+    path: "workflows/【Work-FIsh】WAN2.2-RemixV2-I2V图生视频.json"
+    description: "WAN2.2 RemixV2 图生视频"
+    inputs:
+      image: "image_78"             # 输入图片（支持 base64/URL/文件名）
+      positive_prompt: "text_72"    # 正向提示词
+      negative_prompt: "text_3"     # 反向提示词
+      frames: "value_59"            # 帧数（默认 81，即约 5 秒）
+      steps: "value_57"             # 总步数（默认 6）
+      seed: "noise_seed_54"         # 随机种子
+    outputs:
+      video: "VHS_VideoCombine"     # 输出视频
+
 

@@ -878,7 +878,9 @@ class ComfyUIInstaller:
                 
                 runtime_missing = self.detect_missing_nodes_runtime()
                 if runtime_missing:
-                    self.log(f"[yellow]Runtime check found {len(runtime_missing)} missing nodes[/yellow]")
+                    self.log(f"[yellow]Runtime check found {len(runtime_missing)} missing nodes:[/yellow]")
+                    for node in runtime_missing:
+                        self.log(f"  [dim]• {node}[/dim]")
                     live.update(self.make_layout(progress))
                     
                     # Try to resolve and install missing nodes
@@ -1198,6 +1200,10 @@ def main():
             
             if failed:
                 success = False
+            
+            # Show node installation summary again after model download
+            console.print("\n")
+            installer.show_summary()
     
     sys.exit(0 if success else 1)
 

@@ -1150,24 +1150,24 @@ class WorkflowParser:
             
             if known_widget_order and widgets_values:
                 # 使用已知的参数顺序
+                # None 表示占位符（如 control_after_generate），需要跳过但保持索引同步
                 for i, param_name in enumerate(known_widget_order):
                     if i >= len(widgets_values):
                         break
+                    # None 表示占位符，跳过
+                    if param_name is None:
+                        continue
                     # 跳过已经通过连接设置的输入
                     if param_name in inputs:
-                        continue
-                    # 跳过 control_after_generate 等控制参数（不需要传给节点）
-                    if param_name in ("control_after_generate",):
                         continue
                     value = normalize_path(widgets_values[i])
                     if value is not None:
                         # 根据参数名推断类型
-                        if param_name in ("seed", "steps", "width", "height", "batch_size", "start_at_step", "end_at_step"):
+                        if param_name in ("seed", "noise_seed", "steps", "width", "height", "batch_size", "start_at_step", "end_at_step"):
                             value = self._convert_value_type(value, "INT")
                         elif param_name in ("cfg", "denoise", "strength"):
                             value = self._convert_value_type(value, "FLOAT")
-                        elif param_name in ("add_noise", "return_with_leftover_noise"):
-                            value = self._convert_value_type(value, "BOOLEAN")
+                        # add_noise 和 return_with_leftover_noise 是 COMBO 类型，保持字符串
                         inputs[param_name] = value
             else:
                 # 从工作流 JSON 中提取 widget 输入的顺序
@@ -1300,10 +1300,17 @@ class WorkflowParser:
                     inputs[param_name] = normalize_path(widgets_values[i])
     
     def _get_common_params(self, node_type: str) -> List[str]:
-        """获取常见节点类型的参数顺序"""
+        """获取常见节点类型的参数顺序
+        
+        注意：这里的顺序必须与 widgets_values 中的顺序完全一致。
+        某些参数（如 control_after_generate）是其他参数的属性，在 widgets_values 中占位但不是独立参数。
+        使用 None 表示需要跳过的占位符。
+        """
         common_mappings = {
-            "KSampler": ["seed", "control_after_generate", "steps", "cfg", "sampler_name", "scheduler", "denoise"],
-            "KSamplerAdvanced": ["add_noise", "noise_seed", "control_after_generate", "steps", "cfg", "sampler_name", "scheduler", "start_at_step", "end_at_step", "return_with_leftover_noise"],
+            # KSampler: seed 有 control_after_generate 属性
+            "KSampler": ["seed", None, "steps", "cfg", "sampler_name", "scheduler", "denoise"],
+            # KSamplerAdvanced: noise_seed 有 control_after_generate 属性
+            "KSamplerAdvanced": ["add_noise", "noise_seed", None, "steps", "cfg", "sampler_name", "scheduler", "start_at_step", "end_at_step", "return_with_leftover_noise"],
             "CheckpointLoaderSimple": ["ckpt_name"],
             "CLIPTextEncode": ["text"],
             "EmptyLatentImage": ["width", "height", "batch_size"],

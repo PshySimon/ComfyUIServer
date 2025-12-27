@@ -1457,10 +1457,23 @@ class WorkflowExecutor:
                     else:
                         inputs[key] = value
                 
-                # 检查函数是否需要额外参数（如 unique_id）
+                # 检查函数签名，过滤掉函数不接受的参数
                 import inspect
                 sig = inspect.signature(func)
                 func_params = sig.parameters
+                
+                # 检查函数是否接受 **kwargs
+                has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in func_params.values())
+                
+                if not has_var_keyword:
+                    # 函数不接受 **kwargs，只传递函数定义的参数
+                    filtered_inputs = {}
+                    for key, value in inputs.items():
+                        if key in func_params:
+                            filtered_inputs[key] = value
+                        else:
+                            print(f"[DEBUG] 节点 {class_type} (ID: {node_id}) 跳过未知参数: {key}")
+                    inputs = filtered_inputs
                 
                 # 添加必要的额外参数
                 if 'unique_id' in func_params:

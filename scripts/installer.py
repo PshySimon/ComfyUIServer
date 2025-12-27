@@ -611,6 +611,8 @@ class ComfyUIInstaller:
             return [], {}, []
         
         self.log(f"[cyan]Resolving {len(unknown_nodes)} unknown nodes...[/cyan]")
+        for node in unknown_nodes:
+            self.log(f"  [dim]• {node}[/dim]")
         
         # First, check if nodes exist locally (even if not in official database)
         locally_found = []
@@ -966,6 +968,7 @@ class ComfyUIInstaller:
                     # Try to resolve and install missing nodes
                     node_map = self.download_node_map()
                     runtime_repos = set()
+                    runtime_update_repos = set()  # Repos that need update
                     runtime_unknown = []
                     
                     for node_type in runtime_missing:
@@ -978,6 +981,10 @@ class ComfyUIInstaller:
                             if not self.is_node_installed(best_repo):
                                 runtime_repos.add(best_repo)
                                 self.log(f"[green]✓ Found {node_type} in {best_repo.split('/')[-1]}[/green]")
+                            else:
+                                # Package is installed but node is missing - may need update
+                                runtime_update_repos.add(best_repo)
+                                self.log(f"[yellow]⚠ {node_type} should be in {best_repo.split('/')[-1]} (installed, may need update)[/yellow]")
                         else:
                             runtime_unknown.append(node_type)
                             self.log(f"[red]✗ No package found for {node_type}[/red]")
@@ -1003,6 +1010,14 @@ class ComfyUIInstaller:
                         
                         progress.update(runtime_task, description="[green]✓ Runtime packages installed")
                         live.update(self.make_layout(progress))
+                    
+                    # Suggest updating packages that are installed but missing nodes
+                    if runtime_update_repos:
+                        self.log(f"[yellow]⚠ {len(runtime_update_repos)} packages may need update:[/yellow]")
+                        for repo_url in runtime_update_repos:
+                            repo_name = repo_url.split("/")[-1] if "/" in repo_url else repo_url
+                            self.log(f"  [dim]• {repo_name}[/dim]")
+                        self.log(f"[dim]Try: cd ComfyUI/custom_nodes/<package> && git pull[/dim]")
                     
                     # Add runtime unknown nodes to the list
                     self.unknown_nodes.extend(runtime_unknown)

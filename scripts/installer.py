@@ -302,19 +302,6 @@ class ComfyUIInstaller:
     def download_node_map(self) -> Dict:
         """Download the official extension-node-map.json"""
         self.log("[dim]Downloading official node map...[/dim]")
-        
-        # First try local cache from ComfyUI-Manager
-        local_cache = self.manager_dir / "extension-node-map.json"
-        if local_cache.exists():
-            try:
-                with open(local_cache, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    self.log(f"[green]Loaded {len(data)} repos from local cache[/green]")
-                    return data
-            except Exception as e:
-                self.log(f"[yellow]Failed to load local cache: {e}[/yellow]")
-        
-        # Fallback to download
         try:
             req = urllib.request.Request(
                 self.NODE_MAP_URL,
@@ -322,7 +309,7 @@ class ComfyUIInstaller:
             )
             with urllib.request.urlopen(req, timeout=30) as response:
                 data = json.loads(response.read().decode('utf-8'))
-                self.log(f"[green]Loaded {len(data)} repos from remote[/green]")
+                self.log(f"[green]Loaded {len(data)} repos from node map[/green]")
                 return data
         except Exception as e:
             self.log(f"[yellow]Failed to download node map: {e}[/yellow]")
@@ -330,36 +317,17 @@ class ComfyUIInstaller:
     
     def search_node_in_map(self, node_type: str, node_map: Dict) -> Optional[str]:
         """Search for a node type in the official node map. Returns repo URL if found."""
-        import re
-        for repo_url, (node_list, meta) in node_map.items():
-            # Direct match
+        for repo_url, (node_list, _meta) in node_map.items():
             if node_type in node_list:
                 return repo_url
-            # Pattern match (e.g., rgthree-comfy uses " \(rgthree\)$" pattern)
-            if 'nodename_pattern' in meta:
-                try:
-                    if re.search(meta['nodename_pattern'], node_type):
-                        return repo_url
-                except:
-                    pass
         return None
     
     def find_all_repos_for_node(self, node_type: str, node_map: Dict) -> List[str]:
         """Find ALL repos that provide a node type (not just the first one)."""
-        import re
         repos = []
-        for repo_url, (node_list, meta) in node_map.items():
-            # Direct match
+        for repo_url, (node_list, _meta) in node_map.items():
             if node_type in node_list:
                 repos.append(repo_url)
-                continue
-            # Pattern match
-            if 'nodename_pattern' in meta:
-                try:
-                    if re.search(meta['nodename_pattern'], node_type):
-                        repos.append(repo_url)
-                except:
-                    pass
         return repos
     
     def build_package_scores(self, workflow_nodes: List[str], node_map: Dict) -> Dict[str, int]:
@@ -371,35 +339,12 @@ class ComfyUIInstaller:
         - If only 1 package provides a node: that package gets +3 points (strong signal)
         - If 2-3 packages provide a node: each gets +1 point
         - If >3 packages provide a node: no points (too ambiguous)
-        - Pattern-matched packages get +2 bonus (they're more specific)
-        - Packages with more nodes get bonus (more complete/maintained)
         
         Returns: Dict mapping repo_url to score
         """
-        import re
         scores: Dict[str, int] = {}
-        
-        # Pre-calculate package sizes for bonus scoring
-        package_sizes = {url: len(node_list) for url, (node_list, _) in node_map.items()}
-        
         for node_type in workflow_nodes:
-            repos = []
-            pattern_matched_repos = set()
-            
-            for repo_url, (node_list, meta) in node_map.items():
-                # Direct match
-                if node_type in node_list:
-                    repos.append(repo_url)
-                    continue
-                # Pattern match - these are more specific
-                if 'nodename_pattern' in meta:
-                    try:
-                        if re.search(meta['nodename_pattern'], node_type):
-                            repos.append(repo_url)
-                            pattern_matched_repos.add(repo_url)
-                    except:
-                        pass
-            
+            repos = self.find_all_repos_for_node(node_type, node_map)
             if len(repos) == 1:
                 # Strong signal - only one package has this node
                 scores[repos[0]] = scores.get(repos[0], 0) + 3
@@ -408,22 +353,6 @@ class ComfyUIInstaller:
                 for repo in repos:
                     scores[repo] = scores.get(repo, 0) + 1
             # If more than 3 repos have this node, it's too common - no points
-            
-            # Bonus for pattern-matched repos (they're more specific)
-            for repo in pattern_matched_repos:
-                scores[repo] = scores.get(repo, 0) + 2
-        
-        # Bonus for larger packages (more complete/maintained)
-        # Packages with 100+ nodes get +5, 50+ get +3, 20+ get +1
-        for repo_url in scores:
-            size = package_sizes.get(repo_url, 0)
-            if size >= 100:
-                scores[repo_url] += 5
-            elif size >= 50:
-                scores[repo_url] += 3
-            elif size >= 20:
-                scores[repo_url] += 1
-        
         return scores
     
     def get_all_workflow_nodes(self) -> List[str]:
@@ -626,8 +555,6 @@ class ComfyUIInstaller:
             return [], {}, []
         
         self.log(f"[cyan]Resolving {len(unknown_nodes)} unknown nodes...[/cyan]")
-        for node in unknown_nodes:
-            self.log(f"  [dim]• {node}[/dim]")
         
         # First, check if nodes exist locally (even if not in official database)
         locally_found = []
@@ -666,20 +593,9 @@ class ComfyUIInstaller:
         github_candidates = {}  # node_type -> list of candidates
         still_unknown = []
         
-        import re
         for node_type in nodes_to_resolve:
             # Find ALL repos that provide this node (not just the first)
             repos = self.find_all_repos_for_node(node_type, node_map) if node_map else []
-            
-            # Identify pattern-matched repos (they're more specific)
-            pattern_matched = set()
-            for repo_url, (node_list, meta) in node_map.items():
-                if 'nodename_pattern' in meta:
-                    try:
-                        if re.search(meta['nodename_pattern'], node_type):
-                            pattern_matched.add(repo_url)
-                    except:
-                        pass
             
             if len(repos) == 1:
                 # Only one repo provides this node - easy case
@@ -692,26 +608,13 @@ class ComfyUIInstaller:
                     official_repos.add(repo_url)
             elif len(repos) > 1:
                 # Multiple repos provide this node - use context voting
-                # Prefer pattern-matched repos (they're more specific)
-                if pattern_matched:
-                    # Filter to only pattern-matched repos
-                    pattern_repos = [r for r in repos if r in pattern_matched]
-                    if len(pattern_repos) == 1:
-                        best_repo = pattern_repos[0]
-                        self.log(f"[cyan]⚡ {node_type} matched by pattern -> {best_repo.split('/')[-1]}[/cyan]")
-                    else:
-                        # Multiple pattern matches, use scoring
-                        best_repo = max(pattern_repos, key=lambda r: package_scores.get(r, 0))
-                else:
-                    # No pattern match, use scoring
-                    best_repo = max(repos, key=lambda r: package_scores.get(r, 0))
-                
+                # Pick the repo with highest score based on workflow context
+                best_repo = max(repos, key=lambda r: package_scores.get(r, 0))
                 best_score = package_scores.get(best_repo, 0)
                 
                 # Log the decision
                 other_repos = [r.split('/')[-1] for r in repos if r != best_repo][:2]
-                if not pattern_matched:
-                    self.log(f"[cyan]⚡ {node_type} found in {len(repos)} packages, chose {best_repo.split('/')[-1]} (score:{best_score})[/cyan]")
+                self.log(f"[cyan]⚡ {node_type} found in {len(repos)} packages, chose {best_repo.split('/')[-1]} (score:{best_score})[/cyan]")
                 if other_repos:
                     self.log(f"[dim]   Alternatives: {', '.join(other_repos)}[/dim]")
                 
@@ -983,7 +886,6 @@ class ComfyUIInstaller:
                     # Try to resolve and install missing nodes
                     node_map = self.download_node_map()
                     runtime_repos = set()
-                    runtime_update_repos = set()  # Repos that need update
                     runtime_unknown = []
                     
                     for node_type in runtime_missing:
@@ -996,10 +898,6 @@ class ComfyUIInstaller:
                             if not self.is_node_installed(best_repo):
                                 runtime_repos.add(best_repo)
                                 self.log(f"[green]✓ Found {node_type} in {best_repo.split('/')[-1]}[/green]")
-                            else:
-                                # Package is installed but node is missing - may need update
-                                runtime_update_repos.add(best_repo)
-                                self.log(f"[yellow]⚠ {node_type} should be in {best_repo.split('/')[-1]} (installed, may need update)[/yellow]")
                         else:
                             runtime_unknown.append(node_type)
                             self.log(f"[red]✗ No package found for {node_type}[/red]")
@@ -1025,14 +923,6 @@ class ComfyUIInstaller:
                         
                         progress.update(runtime_task, description="[green]✓ Runtime packages installed")
                         live.update(self.make_layout(progress))
-                    
-                    # Suggest updating packages that are installed but missing nodes
-                    if runtime_update_repos:
-                        self.log(f"[yellow]⚠ {len(runtime_update_repos)} packages may need update:[/yellow]")
-                        for repo_url in runtime_update_repos:
-                            repo_name = repo_url.split("/")[-1] if "/" in repo_url else repo_url
-                            self.log(f"  [dim]• {repo_name}[/dim]")
-                        self.log(f"[dim]Try: cd ComfyUI/custom_nodes/<package> && git pull[/dim]")
                     
                     # Add runtime unknown nodes to the list
                     self.unknown_nodes.extend(runtime_unknown)

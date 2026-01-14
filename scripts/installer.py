@@ -275,18 +275,33 @@ class ComfyUIInstaller:
             capture=True
         )
 
-        # If failed, try with official PyPI (override mirror completely)
+        # If failed, try with official PyPI by temporarily clearing pip config
         if result.returncode != 0:
             self.log("[yellow]Some packages failed with configured mirror, retrying with official PyPI...[/yellow]")
-            # Use -i to override the default index-url, and --trusted-host to avoid SSL issues
-            result = self.run_command(
-                [sys.executable, "-m", "pip", "install", "-r", str(req_file),
-                 "-i", "https://pypi.org/simple/",
-                 "--trusted-host", "pypi.org",
-                 "--trusted-host", "files.pythonhosted.org", "-q"],
-                cwd=self.comfyui_dir,
-                capture=True
-            )
+
+            # Save current environment
+            import os
+            original_env = os.environ.copy()
+
+            try:
+                # Temporarily unset pip config environment variables to bypass mirrors
+                for key in list(os.environ.keys()):
+                    if key.startswith('PIP_'):
+                        os.environ.pop(key, None)
+
+                # Force use official PyPI
+                result = self.run_command(
+                    [sys.executable, "-m", "pip", "install", "-r", str(req_file),
+                     "--index-url", "https://pypi.org/simple/",
+                     "--trusted-host", "pypi.org",
+                     "--trusted-host", "files.pythonhosted.org", "-q"],
+                    cwd=self.comfyui_dir,
+                    capture=True
+                )
+            finally:
+                # Restore environment
+                os.environ.clear()
+                os.environ.update(original_env)
 
         return result.returncode == 0
     

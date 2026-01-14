@@ -553,24 +553,29 @@ class ComfyUIInstaller:
         """
         Load ComfyUI runtime and detect truly missing nodes by comparing
         workflow nodes against actually loaded NODE_CLASS_MAPPINGS.
-        
+
         This is the same method ComfyUI Manager GUI uses to detect missing nodes.
-        
+
         Returns: List of node types that are in the workflow but not loaded.
         """
+        self.log(f"[dim]DEBUG: detect_missing_nodes_runtime() called[/dim]", to_file_only=True)
         if not self.workflow_file or not self.workflow_file.exists():
+            self.log(f"[dim]DEBUG: No workflow file found, returning empty list[/dim]", to_file_only=True)
             return []
-        
+
         self.log("[dim]Loading ComfyUI to verify nodes...[/dim]")
-        
+
         # Get workflow nodes
         workflow_nodes = set(self.get_all_workflow_nodes())
+        self.log(f"[dim]DEBUG: Workflow contains {len(workflow_nodes)} total nodes: {workflow_nodes}[/dim]", to_file_only=True)
         if not workflow_nodes:
+            self.log(f"[dim]DEBUG: No workflow nodes found, returning empty list[/dim]", to_file_only=True)
             return []
-        
+
         # Skip virtual/built-in nodes that don't need packages
         skip_nodes = {'Reroute', 'Note', 'PrimitiveNode'}
         workflow_nodes = workflow_nodes - skip_nodes
+        self.log(f"[dim]DEBUG: After filtering skip_nodes, {len(workflow_nodes)} nodes remain[/dim]", to_file_only=True)
         
         try:
             # Save current state
@@ -601,13 +606,16 @@ class ComfyUIInstaller:
                 
                 # Load all nodes including custom nodes
                 asyncio.get_event_loop().run_until_complete(init_extra_nodes(init_custom_nodes=True))
-                
+
                 # Get loaded nodes
                 loaded_nodes = set(NODE_CLASS_MAPPINGS.keys())
-                
+                self.log(f"[dim]DEBUG: ComfyUI loaded {len(loaded_nodes)} total nodes[/dim]", to_file_only=True)
+
                 # Find missing nodes
                 missing = workflow_nodes - loaded_nodes
-                
+                self.log(f"[dim]DEBUG: Missing nodes calculation: {len(workflow_nodes)} workflow - {len(loaded_nodes)} loaded = {len(missing)} missing[/dim]", to_file_only=True)
+                self.log(f"[dim]DEBUG: Missing nodes list: {list(missing)}[/dim]", to_file_only=True)
+
                 self.log(f"[dim]Workflow nodes: {len(workflow_nodes)}, Loaded: {len(loaded_nodes)}, Missing: {len(missing)}[/dim]")
                 
                 return list(missing)
@@ -947,9 +955,13 @@ class ComfyUIInstaller:
                 # Phase 3: Resolve unknown nodes
                 if self.unknown_nodes:
                     self.log(f"[yellow]Found {len(self.unknown_nodes)} unknown nodes, attempting to resolve...[/yellow]")
+                    self.log(f"[dim]DEBUG: Phase 3 - Unknown nodes to resolve: {self.unknown_nodes}[/dim]", to_file_only=True)
                     live.update(self.make_layout(progress))
-                    
+
                     official_repos, github_candidates, still_unknown = self.resolve_unknown_nodes(self.unknown_nodes)
+                    self.log(f"[dim]DEBUG: Phase 3 - resolve_unknown_nodes returned: official={len(official_repos)}, github={len(github_candidates)}, still_unknown={len(still_unknown)}[/dim]", to_file_only=True)
+                    self.log(f"[dim]DEBUG: Phase 3 - Official repos: {official_repos}[/dim]", to_file_only=True)
+                    self.log(f"[dim]DEBUG: Phase 3 - Still unknown: {still_unknown}[/dim]", to_file_only=True)
                     live.update(self.make_layout(progress))
                     
                     # Install official repos automatically
@@ -988,31 +1000,43 @@ class ComfyUIInstaller:
                 
                 # Phase 4: Runtime verification - load ComfyUI and check for truly missing nodes
                 self.log("[cyan]Phase 4: Runtime verification...[/cyan]")
+                self.log(f"[dim]DEBUG: Entering runtime verification phase[/dim]", to_file_only=True)
                 live.update(self.make_layout(progress))
-                
+
                 runtime_missing = self.detect_missing_nodes_runtime()
+                self.log(f"[dim]DEBUG: Runtime detection returned {len(runtime_missing) if runtime_missing else 0} missing nodes[/dim]", to_file_only=True)
                 if runtime_missing:
+                    self.log(f"[dim]DEBUG: Runtime missing nodes list: {runtime_missing}[/dim]", to_file_only=True)
                     self.log(f"[yellow]Runtime check found {len(runtime_missing)} missing nodes:[/yellow]")
                     for node in runtime_missing:
                         self.log(f"  [dim]• {node}[/dim]")
                     live.update(self.make_layout(progress))
-                    
+
                     # Try to resolve and install missing nodes
+                    self.log(f"[dim]DEBUG: Downloading node map for runtime resolution[/dim]", to_file_only=True)
                     node_map = self.download_node_map()
+                    self.log(f"[dim]DEBUG: Node map size for runtime: {len(node_map)} repos[/dim]", to_file_only=True)
                     runtime_repos = set()
                     runtime_unknown = []
-                    
+
                     for node_type in runtime_missing:
+                        self.log(f"[dim]DEBUG: Runtime resolving node '{node_type}'[/dim]", to_file_only=True)
                         repos = self.find_all_repos_for_node(node_type, node_map)
+                        self.log(f"[dim]DEBUG: find_all_repos_for_node returned {len(repos) if repos else 0} repos for '{node_type}'[/dim]", to_file_only=True)
                         if repos:
+                            self.log(f"[dim]DEBUG: Repos found for '{node_type}': {repos}[/dim]", to_file_only=True)
                             # Use package scoring to pick the best repo
                             workflow_nodes = self.get_all_workflow_nodes()
                             scores = self.build_package_scores(workflow_nodes, node_map)
                             best_repo = max(repos, key=lambda r: scores.get(r, 0))
+                            self.log(f"[dim]DEBUG: Best repo for '{node_type}': {best_repo} (score: {scores.get(best_repo, 0)})[/dim]", to_file_only=True)
                             if not self.is_node_installed(best_repo):
                                 runtime_repos.add(best_repo)
                                 self.log(f"[green]✓ Found {node_type} in {best_repo.split('/')[-1]}[/green]")
+                            else:
+                                self.log(f"[dim]DEBUG: Repo {best_repo} already installed for '{node_type}'[/dim]", to_file_only=True)
                         else:
+                            self.log(f"[dim]DEBUG: No repos found for '{node_type}', adding to runtime_unknown[/dim]", to_file_only=True)
                             runtime_unknown.append(node_type)
                             self.log(f"[red]✗ No package found for {node_type}[/red]")
                     

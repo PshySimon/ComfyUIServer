@@ -821,19 +821,22 @@ class ModelDownloader:
         self.log(f"[cyan]Downloading {model.name} to {model.directory}/[/cyan]")
         self.log(f"[dim]URL: {model.url[:80]}...[/dim]")
         
-        # aria2c command with multi-threading
+        # aria2c command with optimized settings for cloud environment
         cmd = [
             "aria2c",
             "-d", str(target_dir),
             "-o", filename,
-            "-s", "16",           # 16 connections
-            "-x", "16",           # max connections per server
-            "-k", "1M",           # min split size
-            "-c",                 # continue/resume download
-            "-m", "5",            # max tries
-            "--retry-wait=3",
-            "-t", "60",           # timeout
-            "--connect-timeout=30",
+            "-s", "8",                      # 8 connections (减少以避免慢连接)
+            "-x", "8",                      # max connections per server
+            "-k", "5M",                     # 5MB min split size (增大以减少碎片)
+            "-c",                           # continue/resume download
+            "-m", "3",                      # max tries (减少重试次数)
+            "--retry-wait=2",
+            "-t", "30",                     # 30s timeout (更激进的超时)
+            "--connect-timeout=15",         # 15s connect timeout
+            "--lowest-speed-limit=100K",    # 低于 100KB/s 就断开连接
+            "--max-connection-per-server=8",
+            "--file-allocation=none",       # 不预分配，减少磁盘操作
             "--summary-interval=1",
             "--console-log-level=notice",
             "--download-result=hide",

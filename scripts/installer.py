@@ -240,6 +240,43 @@ class ComfyUIInstaller:
             self.log(f"[red]Failed to setup workflows symlink: {e}[/red]")
             return False
     
+    def fix_numpy_version(self) -> bool:
+        """强制降级 NumPy 到 1.26.4 以解决兼容性问题"""
+        try:
+            import numpy
+            current_version = numpy.__version__
+            major_version = int(current_version.split('.')[0])
+
+            if major_version >= 2:
+                self.log(f"[yellow]⚠ NumPy {current_version} detected (incompatible), downgrading to 1.26.4...[/yellow]")
+                result = self.run_command(
+                    [sys.executable, "-m", "pip", "install", "numpy==1.26.4", "--force-reinstall", "-q"],
+                    capture=True
+                )
+                if result.returncode == 0:
+                    self.log("[green]✓ NumPy downgraded to 1.26.4 successfully[/green]")
+                    return True
+                else:
+                    self.log("[red]✗ Failed to downgrade NumPy[/red]")
+                    return False
+            elif not current_version.startswith("1.26"):
+                self.log(f"[yellow]NumPy {current_version} detected, upgrading to 1.26.4...[/yellow]")
+                result = self.run_command(
+                    [sys.executable, "-m", "pip", "install", "numpy==1.26.4", "-q"],
+                    capture=True
+                )
+                return result.returncode == 0
+            else:
+                self.log(f"[dim]✓ NumPy version OK: {current_version}[/dim]")
+                return True
+        except ImportError:
+            self.log("[yellow]NumPy not installed, installing 1.26.4...[/yellow]")
+            result = self.run_command(
+                [sys.executable, "-m", "pip", "install", "numpy==1.26.4", "-q"],
+                capture=True
+            )
+            return result.returncode == 0
+
     def install_project_requirements(self) -> bool:
         """Install project requirements from root directory"""
         req_file = self.install_dir / "requirements.txt"
@@ -253,6 +290,10 @@ class ComfyUIInstaller:
             cwd=self.install_dir,
             capture=True
         )
+
+        # 安装完成后立即修复 NumPy 版本
+        self.fix_numpy_version()
+
         return result.returncode == 0
 
     def install_requirements(self) -> bool:
@@ -303,6 +344,9 @@ class ComfyUIInstaller:
                 # Restore environment
                 os.environ.clear()
                 os.environ.update(original_env)
+
+        # 安装完成后立即修复 NumPy 版本
+        self.fix_numpy_version()
 
         return result.returncode == 0
     
@@ -419,23 +463,25 @@ class ComfyUIInstaller:
         node_name = node_url.split("/")[-1] if "/" in node_url else node_url
         if node_name.endswith(".git"):
             node_name = node_name[:-4]
-        
+
         # Check if already installed
         if self.is_node_installed(node_url):
             self.log(f"[dim]Skipped {node_name} (already installed)[/dim]")
             self.installed_nodes.append(f"{node_name} (existed)")
             return True
-        
+
         self.log(f"[cyan]Installing {node_name}...[/cyan]")
-        
+
         result = self.run_command(
             [sys.executable, str(self.cm_cli), "install", node_url],
             cwd=self.comfyui_dir,
             capture=True
         )
-        
+
         if result.returncode == 0:
             self.installed_nodes.append(node_name)
+            # 每次安装完插件后都检查并修复 NumPy 版本
+            self.fix_numpy_version()
             return True
         else:
             error = result.stderr or result.stdout or "Unknown error"

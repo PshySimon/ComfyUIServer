@@ -799,7 +799,7 @@ class ModelDownloader:
             return f"{size_bytes} B"
     
     def download_with_aria2(self, model: ModelInfo, progress_callback=None) -> bool:
-        """Download a model using aria2c"""
+        """Download a model using aria2c with resume support"""
         # 处理子目录结构，如 "Qwen/model.gguf"
         model_path = model.name.replace('\\', '/')
         if '/' in model_path:
@@ -810,14 +810,27 @@ class ModelDownloader:
         else:
             filename = model_path
             target_dir = self.models_dir / model.directory
-        
+
         target_dir.mkdir(parents=True, exist_ok=True)
         target_file = target_dir / filename
-        
-        if target_file.exists():
-            self.log(f"[yellow]Model already exists: {model.name}[/yellow]")
-            return True
-        
+        aria2_control_file = target_dir / f"{filename}.aria2"
+
+        # 检查文件是否已完整下载（存在且大小 > 1KB）
+        if target_file.exists() and target_file.stat().st_size > 1024:
+            # 如果有 .aria2 控制文件，说明之前下载中断，需要续传
+            if aria2_control_file.exists():
+                self.log(f"[yellow]Resuming incomplete download: {model.name}[/yellow]")
+            else:
+                # 文件完整，跳过
+                self.log(f"[green]✓ Model already downloaded: {model.name}[/green]")
+                return True
+        elif target_file.exists() and target_file.stat().st_size <= 1024:
+            # 文件太小，可能损坏，删除重新下载
+            self.log(f"[yellow]Removing corrupted file: {model.name}[/yellow]")
+            target_file.unlink()
+            if aria2_control_file.exists():
+                aria2_control_file.unlink()
+
         self.log(f"[cyan]Downloading {model.name} to {model.directory}/[/cyan]")
         self.log(f"[dim]URL: {model.url[:80]}...[/dim]")
         
@@ -871,11 +884,23 @@ class ModelDownloader:
                         self.log(f"[red]{line}[/red]")
             
             process.wait()
-            
-            if process.returncode == 0 and target_file.exists():
-                return True
+
+            # 验证下载是否成功
+            if process.returncode == 0:
+                # 检查文件是否存在且大小合理（> 1KB）
+                if target_file.exists() and target_file.stat().st_size > 1024:
+                    # 检查是否还有 .aria2 控制文件（说明下载未完成）
+                    if aria2_control_file.exists():
+                        self.log(f"[yellow]⚠ Download incomplete, .aria2 file still present[/yellow]")
+                        return False
+                    else:
+                        self.log(f"[green]✓ Download verified: {model.name} ({self.format_size(target_file.stat().st_size)})[/green]")
+                        return True
+                else:
+                    self.log(f"[red]✗ Downloaded file is missing or too small[/red]")
+                    return False
             else:
-                self.log(f"[red]✗ Download failed for {model.name}[/red]")
+                self.log(f"[red]✗ Download failed for {model.name} (exit code: {process.returncode})[/red]")
                 return False
                 
         except Exception as e:

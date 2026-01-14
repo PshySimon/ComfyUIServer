@@ -46,9 +46,7 @@ RESPONSE=$(curl -s -X POST "$BASE_URL/image-to-video" \
     -d "{
         \"model\": \"wan22_remix_i2v\",
         \"images\": [\"$IMAGE_BASE64\"],
-        \"positive_prompt\": \"橘猫摇了摇头\",
-        \"sage_attention_low\": \"disabled\",
-        \"sage_attention_high\": \"disabled\"
+        \"positive_prompt\": \"橘猫摇了摇头\"
     }")
 
 if [ $? -ne 0 ]; then

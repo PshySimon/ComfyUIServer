@@ -2272,8 +2272,6 @@ class ImageToVideoRequest(BaseModel):
     frames: Optional[int] = Field(default=None, description="帧数")
     steps: Optional[int] = Field(default=None, description="采样步数")
     seed: Optional[int] = Field(default=None, description="随机种子")
-    sage_attention_low: Optional[str] = Field(default=None, description="低噪声 Sage Attention (auto/enabled/disabled)")
-    sage_attention_high: Optional[str] = Field(default=None, description="高噪声 Sage Attention (auto/enabled/disabled)")
 
 
 @app.post("/image-to-image", response_model=TaskResponse)
@@ -2392,14 +2390,10 @@ async def image_to_video(request: ImageToVideoRequest):
         "frames": request.frames,
         "steps": request.steps,
         "seed": request.seed if request.seed is not None else random.randint(0, 2**32 - 1),
-        "sage_attention_low": request.sage_attention_low,
-        "sage_attention_high": request.sage_attention_high,
     }
     for param_name, param_value in param_mappings.items():
         if param_value is not None and param_name in input_mapping:
-            mapped_param = input_mapping[param_name]
-            params[mapped_param] = param_value
-            print(f"[DEBUG] 映射参数: {param_name} ({param_value}) -> {mapped_param}")
+            params[input_mapping[param_name]] = param_value
 
     # 映射图片
     for i, img in enumerate(request.images, 1):

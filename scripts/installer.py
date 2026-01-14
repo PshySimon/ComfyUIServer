@@ -307,69 +307,67 @@ class ComfyUIInstaller:
         return result.returncode == 0
     
     def extract_workflow_deps(self) -> Dict:
-        """Extract dependencies from workflow file by directly parsing the JSON
-
-        This method avoids using cm-cli.py which downloads remote databases
-        and can be slow or timeout in cloud environments with network restrictions.
-        """
+        """Extract dependencies from workflow file using cm-cli.py with optimizations"""
         if not self.workflow_file or not self.workflow_file.exists():
             return {"custom_nodes": {}, "unknown_nodes": []}
 
-        self.log(f"[green]Parsing workflow: {self.workflow_file.name}...[/green]")
+        deps_file = Path("/tmp") / f"workflow_deps_{os.getpid()}.json"
 
+        self.log(f"[green]Extracting deps from {self.workflow_file.name}...[/green]")
+
+        # Use --mode=local to avoid downloading remote databases
+        # This forces cm-cli to use only locally cached data
+        result = self.run_command(
+            [sys.executable, str(self.cm_cli), "deps-in-workflow",
+             "--workflow", str(self.workflow_file),
+             "--output", str(deps_file),
+             "--mode", "cache"],  # Use cache mode to avoid remote fetches
+            cwd=self.comfyui_dir,
+            capture=True
+        )
+
+        if result.returncode != 0 or not deps_file.exists():
+            self.log(f"[yellow]cm-cli.py failed, falling back to basic JSON parsing[/yellow]")
+            # Fallback: parse workflow JSON directly to extract node types
+            return self._parse_workflow_directly()
+
+        with open(deps_file, "r") as f:
+            deps = json.load(f)
+
+        deps_file.unlink(missing_ok=True)
+        return deps
+
+    def _parse_workflow_directly(self) -> Dict:
+        """Fallback method to parse workflow JSON when cm-cli.py fails"""
         try:
-            # Workflow files can be either JSON or PNG with embedded JSON
             if self.workflow_file.suffix.lower() == '.png':
-                # Extract workflow from PNG metadata
                 from PIL import Image
-                import base64
-
                 img = Image.open(self.workflow_file)
                 if 'workflow' in img.info:
                     workflow_data = json.loads(img.info['workflow'])
                 elif 'prompt' in img.info:
-                    # Some workflows are stored in 'prompt' field
                     workflow_data = json.loads(img.info['prompt'])
                 else:
-                    self.log("[yellow]No workflow data found in PNG metadata[/yellow]")
                     return {"custom_nodes": {}, "unknown_nodes": []}
             else:
-                # Direct JSON file
                 with open(self.workflow_file, 'r', encoding='utf-8') as f:
                     workflow_data = json.load(f)
 
-            # Extract all node class_types from the workflow
-            # The workflow is a dict where values contain 'class_type' field
             node_types = set()
-
-            # Handle both workflow formats:
-            # 1. Direct nodes dict: {"1": {"class_type": "..."}, ...}
-            # 2. Nested format: {"nodes": [...], "links": [...]}
             if isinstance(workflow_data, dict):
-                # Check if it's the nested format
                 if 'nodes' in workflow_data and isinstance(workflow_data['nodes'], list):
                     for node in workflow_data['nodes']:
                         if 'type' in node:
                             node_types.add(node['type'])
                 else:
-                    # Direct nodes dict format
                     for node_id, node_data in workflow_data.items():
                         if isinstance(node_data, dict) and 'class_type' in node_data:
                             node_types.add(node_data['class_type'])
 
-            self.log(f"[green]Found {len(node_types)} unique node types in workflow[/green]")
-
-            # Return in the format expected by the rest of the code
-            # We don't populate custom_nodes here - that will be resolved later
-            return {
-                "custom_nodes": {},
-                "unknown_nodes": list(node_types)
-            }
-
+            self.log(f"[green]Found {len(node_types)} node types via fallback parser[/green]")
+            return {"custom_nodes": {}, "unknown_nodes": list(node_types)}
         except Exception as e:
-            self.log(f"[red]Failed to parse workflow: {e}[/red]")
-            import traceback
-            traceback.print_exc()
+            self.log(f"[red]Fallback parser also failed: {e}[/red]")
             return {"custom_nodes": {}, "unknown_nodes": []}
     
     def is_node_installed(self, node_url: str) -> bool:

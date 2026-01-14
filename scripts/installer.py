@@ -260,18 +260,31 @@ class ComfyUIInstaller:
         if self.skip_deps:
             self.log("[yellow]Skipping dependencies (--skip-deps)[/yellow]")
             return True
-            
+
         req_file = self.comfyui_dir / "requirements.txt"
         if not req_file.exists():
             self.log("[red]requirements.txt not found[/red]")
             return False
-            
+
         self.log("[green]Installing ComfyUI dependencies...[/green]")
+
+        # First try with configured index (may be a mirror)
         result = self.run_command(
             [sys.executable, "-m", "pip", "install", "-r", str(req_file), "-q"],
             cwd=self.comfyui_dir,
             capture=True
         )
+
+        # If failed, try with official PyPI as fallback (some mirrors may not have all packages)
+        if result.returncode != 0:
+            self.log("[yellow]Some packages failed with configured mirror, trying official PyPI...[/yellow]")
+            result = self.run_command(
+                [sys.executable, "-m", "pip", "install", "-r", str(req_file),
+                 "--extra-index-url", "https://pypi.org/simple/", "-q"],
+                cwd=self.comfyui_dir,
+                capture=True
+            )
+
         return result.returncode == 0
     
     def extract_workflow_deps(self) -> Dict:

@@ -1037,6 +1037,8 @@ class ComfyUIInstaller:
                     runtime_repos = set()
                     runtime_unknown = []
 
+                    repos_needing_reinstall = set()  # Track repos that need dependency reinstall
+
                     for node_type in runtime_missing:
                         self.log(f"[dim]DEBUG: Runtime resolving node '{node_type}'[/dim]", to_file_only=True)
                         repos = self.find_all_repos_for_node(node_type, node_map)
@@ -1052,14 +1054,62 @@ class ComfyUIInstaller:
                                 runtime_repos.add(best_repo)
                                 self.log(f"[green]✓ Found {node_type} in {best_repo.split('/')[-1]}[/green]")
                             else:
+                                # Repo is installed but node not loaded - likely dependency issue
                                 self.log(f"[dim]DEBUG: Repo {best_repo} already installed for '{node_type}'[/dim]", to_file_only=True)
+                                self.log(f"[yellow]⚠ {node_type}: Repo installed but node not loaded - will reinstall dependencies[/yellow]")
+                                repos_needing_reinstall.add(best_repo)
                         else:
                             self.log(f"[dim]DEBUG: No repos found for '{node_type}', adding to runtime_unknown[/dim]", to_file_only=True)
                             runtime_unknown.append(node_type)
                             self.log(f"[red]✗ No package found for {node_type}[/red]")
                     
                     live.update(self.make_layout(progress))
-                    
+
+                    # Reinstall dependencies for repos that have nodes not loading
+                    if repos_needing_reinstall:
+                        self.log(f"[cyan]Reinstalling dependencies for {len(repos_needing_reinstall)} repos with loading issues...[/cyan]")
+                        self.log(f"[dim]DEBUG: Repos needing dependency reinstall: {[r.split('/')[-1] for r in repos_needing_reinstall]}[/dim]", to_file_only=True)
+
+                        reinstall_task = progress.add_task(
+                            "[cyan]Reinstalling dependencies...",
+                            total=len(repos_needing_reinstall)
+                        )
+
+                        for repo_url in repos_needing_reinstall:
+                            repo_name = repo_url.split('/')[-1]
+                            repo_path = self.custom_nodes_dir / repo_name
+                            progress.update(reinstall_task, description=f"[cyan]Reinstalling {repo_name[:30]}...")
+                            live.update(self.make_layout(progress))
+
+                            self.log(f"[cyan]Reinstalling dependencies for {repo_name}...[/cyan]")
+                            self.log(f"[dim]DEBUG: Checking for requirements.txt in {repo_path}[/dim]", to_file_only=True)
+
+                            # Check for requirements.txt and reinstall
+                            req_file = repo_path / "requirements.txt"
+                            if req_file.exists():
+                                self.log(f"[dim]DEBUG: Found requirements.txt, reinstalling...[/dim]", to_file_only=True)
+                                result = self.run_command(
+                                    [sys.executable, "-m", "pip", "install", "-r", str(req_file), "--force-reinstall"],
+                                    cwd=repo_path,
+                                    capture=True
+                                )
+                                if result.returncode == 0:
+                                    self.log(f"[green]✓ Dependencies reinstalled for {repo_name}[/green]")
+                                else:
+                                    self.log(f"[red]✗ Failed to reinstall dependencies for {repo_name}[/red]")
+                                    self.log(f"[dim]DEBUG: pip install failed with code {result.returncode}[/dim]", to_file_only=True)
+                            else:
+                                self.log(f"[dim]No requirements.txt found for {repo_name}, skipping[/dim]")
+                                self.log(f"[dim]DEBUG: No requirements.txt at {req_file}[/dim]", to_file_only=True)
+
+                            progress.advance(reinstall_task)
+                            live.update(self.make_layout(progress))
+
+                        progress.update(reinstall_task, description="[green]✓ Dependencies reinstalled")
+                        live.update(self.make_layout(progress))
+
+                        self.log("[cyan]Please restart the installation to verify if nodes now load correctly[/cyan]")
+
                     # Install runtime-detected missing packages
                     if runtime_repos:
                         self.log(f"[green]Installing {len(runtime_repos)} packages from runtime check[/green]")

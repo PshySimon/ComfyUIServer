@@ -275,12 +275,15 @@ class ComfyUIInstaller:
             capture=True
         )
 
-        # If failed, try with official PyPI as fallback (some mirrors may not have all packages)
+        # If failed, try with official PyPI (override mirror completely)
         if result.returncode != 0:
-            self.log("[yellow]Some packages failed with configured mirror, trying official PyPI...[/yellow]")
+            self.log("[yellow]Some packages failed with configured mirror, retrying with official PyPI...[/yellow]")
+            # Use -i to override the default index-url, and --trusted-host to avoid SSL issues
             result = self.run_command(
                 [sys.executable, "-m", "pip", "install", "-r", str(req_file),
-                 "--extra-index-url", "https://pypi.org/simple/", "-q"],
+                 "-i", "https://pypi.org/simple/",
+                 "--trusted-host", "pypi.org",
+                 "--trusted-host", "files.pythonhosted.org", "-q"],
                 cwd=self.comfyui_dir,
                 capture=True
             )

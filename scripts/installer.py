@@ -285,11 +285,12 @@ class ComfyUIInstaller:
 
             try:
                 # Temporarily unset pip config environment variables to bypass mirrors
+                # But keep proxy settings as they may be needed to access PyPI
                 for key in list(os.environ.keys()):
                     if key.startswith('PIP_'):
                         os.environ.pop(key, None)
 
-                # Force use official PyPI
+                # Force use official PyPI (proxy env vars are preserved)
                 result = self.run_command(
                     [sys.executable, "-m", "pip", "install", "-r", str(req_file),
                      "--index-url", "https://pypi.org/simple/",

@@ -2247,7 +2247,13 @@ class ImageToVideoRequest(BaseModel):
     """图生视频请求"""
     images: List[str] = Field(..., description="输入图片列表（base64编码）")
     positive_prompt: str = Field(default="", description="正向提示词")
+    negative_prompt: Optional[str] = Field(default="", description="负向提示词")
     model: str = Field(default="", description="模型/工作流名称")
+    frames: Optional[int] = Field(default=None, description="帧数")
+    steps: Optional[int] = Field(default=None, description="采样步数")
+    seed: Optional[int] = Field(default=None, description="随机种子")
+    sage_attention_low: Optional[str] = Field(default=None, description="低噪声 Sage Attention (auto/enabled/disabled)")
+    sage_attention_high: Optional[str] = Field(default=None, description="高噪声 Sage Attention (auto/enabled/disabled)")
 
 
 @app.post("/image-to-image", response_model=TaskResponse)
@@ -2351,13 +2357,28 @@ async def image_to_video(request: ImageToVideoRequest):
     # 构建参数
     params = {}
     images_dict = {}
-    
+
     # 映射提示词
     if "positive_prompt" in input_mapping:
         params[input_mapping["positive_prompt"]] = request.positive_prompt
     else:
         params["positive_prompt"] = request.positive_prompt
-    
+
+    if request.negative_prompt and "negative_prompt" in input_mapping:
+        params[input_mapping["negative_prompt"]] = request.negative_prompt
+
+    # 映射其他参数
+    param_mappings = {
+        "frames": request.frames,
+        "steps": request.steps,
+        "seed": request.seed if request.seed is not None else random.randint(0, 2**32 - 1),
+        "sage_attention_low": request.sage_attention_low,
+        "sage_attention_high": request.sage_attention_high,
+    }
+    for param_name, param_value in param_mappings.items():
+        if param_value is not None and param_name in input_mapping:
+            params[input_mapping[param_name]] = param_value
+
     # 映射图片
     for i, img in enumerate(request.images, 1):
         key = f"image{i}"
@@ -2369,7 +2390,7 @@ async def image_to_video(request: ImageToVideoRequest):
             images_dict[input_mapping["image"]] = img
         else:
             images_dict[key] = img
-    
+
     params["_images"] = images_dict
     
     task_id = task_manager.create_task(workflow_name, params)

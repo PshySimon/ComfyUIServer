@@ -376,17 +376,29 @@ class ComfyUIInstaller:
     def download_node_map(self) -> Dict:
         """Download the official extension-node-map.json"""
         self.log("[dim]Downloading official node map...[/dim]")
+        self.log(f"[dim]DEBUG: Downloading from {self.NODE_MAP_URL}[/dim]", to_file_only=True)
         try:
             req = urllib.request.Request(
                 self.NODE_MAP_URL,
                 headers={'User-Agent': 'ComfyUI-Installer/1.0'}
             )
             with urllib.request.urlopen(req, timeout=30) as response:
+                self.log(f"[dim]DEBUG: HTTP response code: {response.status}[/dim]", to_file_only=True)
                 data = json.loads(response.read().decode('utf-8'))
                 self.log(f"[green]Loaded {len(data)} repos from node map[/green]")
+                self.log(f"[dim]DEBUG: Node map successfully parsed, {len(data)} repositories[/dim]", to_file_only=True)
                 return data
+        except urllib.error.URLError as e:
+            self.log(f"[yellow]Failed to download node map: Network error - {e}[/yellow]")
+            self.log(f"[dim]DEBUG: URLError details: {e}[/dim]", to_file_only=True)
+            return {}
+        except json.JSONDecodeError as e:
+            self.log(f"[yellow]Failed to parse node map: JSON decode error - {e}[/yellow]")
+            self.log(f"[dim]DEBUG: JSONDecodeError details: {e}[/dim]", to_file_only=True)
+            return {}
         except Exception as e:
             self.log(f"[yellow]Failed to download node map: {e}[/yellow]")
+            self.log(f"[dim]DEBUG: Exception type: {type(e).__name__}, details: {e}[/dim]", to_file_only=True)
             return {}
     
     def search_node_in_map(self, node_type: str, node_map: Dict) -> Optional[str]:
@@ -627,71 +639,92 @@ class ComfyUIInstaller:
         """
         if not unknown_nodes:
             return [], {}, []
-        
+
         self.log(f"[cyan]Resolving {len(unknown_nodes)} unknown nodes...[/cyan]")
-        
+        self.log(f"[dim]DEBUG: Unknown nodes list: {unknown_nodes}[/dim]", to_file_only=True)
+
         # First, check if nodes exist locally (even if not in official database)
         locally_found = []
         nodes_to_resolve = []
-        
+
+        self.log(f"[dim]DEBUG: Step 1 - Scanning local custom_nodes directory[/dim]", to_file_only=True)
         for node_type in unknown_nodes:
             local_dir = self.scan_local_nodes_for_type(node_type)
             if local_dir:
                 self.log(f"[green]✓ {node_type} found in local: {local_dir}[/green]")
+                self.log(f"[dim]DEBUG: Found '{node_type}' locally in {local_dir}[/dim]", to_file_only=True)
                 locally_found.append(node_type)
             else:
+                self.log(f"[dim]DEBUG: '{node_type}' not found locally, needs resolution[/dim]", to_file_only=True)
                 nodes_to_resolve.append(node_type)
-        
+
         if locally_found:
             self.log(f"[green]✓ {len(locally_found)} unknown nodes already installed locally[/green]")
-        
+
         if not nodes_to_resolve:
+            self.log(f"[dim]DEBUG: All unknown nodes found locally, no need to download node map[/dim]", to_file_only=True)
             return [], {}, []
-        
+
         # Download official node map for remaining nodes
+        self.log(f"[dim]DEBUG: Step 2 - Downloading official node map for {len(nodes_to_resolve)} nodes[/dim]", to_file_only=True)
         node_map = self.download_node_map()
-        
+
+        if node_map:
+            self.log(f"[dim]DEBUG: Node map downloaded successfully, contains {len(node_map)} repos[/dim]", to_file_only=True)
+        else:
+            self.log(f"[dim]DEBUG: WARNING - Node map download failed or empty![/dim]", to_file_only=True)
+
         # Build package scores from ALL workflow nodes for context-based voting
         all_workflow_nodes = self.get_all_workflow_nodes()
         package_scores = self.build_package_scores(all_workflow_nodes, node_map) if node_map else {}
-        
+
         if package_scores:
             # Log top scoring packages for debugging
             top_packages = sorted(package_scores.items(), key=lambda x: x[1], reverse=True)[:3]
             if top_packages:
                 top_names = [url.split('/')[-1] + f"({score})" for url, score in top_packages]
                 self.log(f"[dim]Context voting top packages: {', '.join(top_names)}[/dim]")
-        
+                self.log(f"[dim]DEBUG: Package scores calculated: {len(package_scores)} packages scored[/dim]", to_file_only=True)
+
         official_repos = set()
         already_installed_repos = []
         github_candidates = {}  # node_type -> list of candidates
         still_unknown = []
-        
+
+        self.log(f"[dim]DEBUG: Step 3 - Resolving each node in node map[/dim]", to_file_only=True)
         for node_type in nodes_to_resolve:
+            self.log(f"[dim]DEBUG: Searching for '{node_type}' in node map...[/dim]", to_file_only=True)
+
             # Find ALL repos that provide this node (not just the first)
             repos = self.find_all_repos_for_node(node_type, node_map) if node_map else []
-            
+            self.log(f"[dim]DEBUG: Found {len(repos)} repo(s) for '{node_type}'[/dim]", to_file_only=True)
+
             if len(repos) == 1:
                 # Only one repo provides this node - easy case
                 repo_url = repos[0]
+                self.log(f"[dim]DEBUG: Single repo match: {repo_url}[/dim]", to_file_only=True)
                 if self.is_node_installed(repo_url):
                     self.log(f"[dim]✓ {node_type} already installed[/dim]")
+                    self.log(f"[dim]DEBUG: Repo already installed, skipping[/dim]", to_file_only=True)
                     already_installed_repos.append(node_type)
                 else:
                     self.log(f"[green]✓ Found {node_type} in official map[/green]")
+                    self.log(f"[dim]DEBUG: Adding {repo_url} to install queue[/dim]", to_file_only=True)
                     official_repos.add(repo_url)
             elif len(repos) > 1:
                 # Multiple repos provide this node - use context voting
                 # Pick the repo with highest score based on workflow context
                 best_repo = max(repos, key=lambda r: package_scores.get(r, 0))
                 best_score = package_scores.get(best_repo, 0)
-                
+
                 # Log the decision
                 other_repos = [r.split('/')[-1] for r in repos if r != best_repo][:2]
                 self.log(f"[cyan]⚡ {node_type} found in {len(repos)} packages, chose {best_repo.split('/')[-1]} (score:{best_score})[/cyan]")
+                self.log(f"[dim]DEBUG: Multiple matches - all repos: {[r.split('/')[-1] for r in repos]}[/dim]", to_file_only=True)
+                self.log(f"[dim]DEBUG: Selected {best_repo.split('/')[-1]} with score {best_score}[/dim]", to_file_only=True)
                 if other_repos:
                     self.log(f"[dim]   Alternatives: {', '.join(other_repos)}[/dim]")
-                
+
                 if self.is_node_installed(best_repo):
                     self.log(f"[dim]✓ {node_type} already installed[/dim]")
                     already_installed_repos.append(node_type)
@@ -699,7 +732,9 @@ class ComfyUIInstaller:
                     official_repos.add(best_repo)
             else:
                 # No repo found in official map - fallback to GitHub search
+                self.log(f"[dim]DEBUG: '{node_type}' NOT found in node map, trying GitHub search[/dim]", to_file_only=True)
                 candidates = self.search_github_for_node(node_type)
+                self.log(f"[dim]DEBUG: GitHub search returned {len(candidates)} candidate(s)[/dim]", to_file_only=True)
                 if candidates:
                     # Check if any candidate is already installed
                     installed_candidate = None
@@ -707,20 +742,24 @@ class ComfyUIInstaller:
                         if self.is_node_installed(c['url']):
                             installed_candidate = c['name']
                             break
-                    
+
                     if installed_candidate:
                         self.log(f"[dim]✓ {node_type} already installed ({installed_candidate})[/dim]")
+                        self.log(f"[dim]DEBUG: GitHub candidate already installed: {installed_candidate}[/dim]", to_file_only=True)
                         already_installed_repos.append(node_type)
                     else:
                         self.log(f"[yellow]? Found {len(candidates)} GitHub candidates for {node_type}[/yellow]")
+                        self.log(f"[dim]DEBUG: GitHub candidates: {[c['name'] for c in candidates]}[/dim]", to_file_only=True)
                         github_candidates[node_type] = candidates
                 else:
                     self.log(f"[red]✗ No match found for {node_type}[/red]")
+                    self.log(f"[dim]DEBUG: '{node_type}' - No matches in node map or GitHub, marked as unknown[/dim]", to_file_only=True)
                     still_unknown.append(node_type)
-        
+
         if already_installed_repos:
             self.log(f"[green]✓ {len(already_installed_repos)} more nodes already installed[/green]")
-        
+
+        self.log(f"[dim]DEBUG: Resolution complete - Official: {len(official_repos)}, GitHub: {len(github_candidates)}, Unknown: {len(still_unknown)}[/dim]", to_file_only=True)
         return list(official_repos), github_candidates, still_unknown
     
     def prompt_user_for_github_nodes(self, github_candidates: Dict[str, List[Dict]]) -> List[str]:

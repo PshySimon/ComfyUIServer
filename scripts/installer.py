@@ -1001,12 +1001,30 @@ class ComfyUIInstaller:
                 # Phase 4: Runtime verification - load ComfyUI and check for truly missing nodes
                 self.log("[cyan]Phase 4: Runtime verification...[/cyan]")
                 self.log(f"[dim]DEBUG: Entering runtime verification phase[/dim]", to_file_only=True)
+                self.log(f"[dim]DEBUG: unknown_nodes state before runtime check: {self.unknown_nodes}[/dim]", to_file_only=True)
                 live.update(self.make_layout(progress))
 
                 runtime_missing = self.detect_missing_nodes_runtime()
                 self.log(f"[dim]DEBUG: Runtime detection returned {len(runtime_missing) if runtime_missing else 0} missing nodes[/dim]", to_file_only=True)
                 if runtime_missing:
                     self.log(f"[dim]DEBUG: Runtime missing nodes list: {runtime_missing}[/dim]", to_file_only=True)
+
+                    # Check which missing nodes were supposed to be installed
+                    self.log(f"[dim]DEBUG: Checking which runtime-missing nodes have installed repos...[/dim]", to_file_only=True)
+                    temp_node_map = self.download_node_map()
+                    self.log(f"[dim]DEBUG: Downloaded node map with {len(temp_node_map)} repos for verification[/dim]", to_file_only=True)
+
+                    for node in runtime_missing:
+                        repos = self.find_all_repos_for_node(node, temp_node_map) if temp_node_map else []
+                        if repos:
+                            installed_repos = [r for r in repos if self.is_node_installed(r)]
+                            if installed_repos:
+                                self.log(f"[dim]DEBUG: WARNING - '{node}' has installed repo(s) {[r.split('/')[-1] for r in installed_repos]} but node NOT loaded![/dim]", to_file_only=True)
+                            else:
+                                self.log(f"[dim]DEBUG: '{node}' repos exist in map but not installed: {[r.split('/')[-1] for r in repos]}[/dim]", to_file_only=True)
+                        else:
+                            self.log(f"[dim]DEBUG: '{node}' not found in node map at all[/dim]", to_file_only=True)
+
                     self.log(f"[yellow]Runtime check found {len(runtime_missing)} missing nodes:[/yellow]")
                     for node in runtime_missing:
                         self.log(f"  [dim]• {node}[/dim]")

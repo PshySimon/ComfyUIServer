@@ -51,38 +51,60 @@ class ComfyUIInstaller:
         self.install_dir = Path(install_dir).resolve()
         self.workflow_file = Path(workflow_file).resolve() if workflow_file else None
         self.skip_deps = skip_deps
-        
+
         self.comfyui_dir = self.install_dir / "ComfyUI"
         self.custom_nodes_dir = self.comfyui_dir / "custom_nodes"
         self.manager_dir = self.custom_nodes_dir / "ComfyUI-Manager"
         self.models_downloader_dir = self.custom_nodes_dir / "ComfyUI-Workflow-Models-Downloader"
         self.save_as_script_dir = self.custom_nodes_dir / "ComfyUI-SaveAsScript"
         self.cm_cli = self.manager_dir / "cm-cli.py"
-        
+
         self.console = Console()
         self.logs: List[str] = []
         self.failed_nodes: List[Tuple[str, str]] = []  # (node_name, error)
         self.unknown_nodes: List[str] = []
         self.installed_nodes: List[str] = []
+
+        # Setup log file
+        self.log_file = self.install_dir / "logs" / "install.log"
+        self.log_file.parent.mkdir(parents=True, exist_ok=True)
+        # Clear previous log
+        with open(self.log_file, 'w', encoding='utf-8') as f:
+            f.write(f"=== ComfyUI Installation Log ===\n")
+            f.write(f"Started at: {__import__('datetime').datetime.now()}\n")
+            f.write(f"Install directory: {self.install_dir}\n\n")
         
-    def log(self, message: str):
-        """Add a log message"""
-        self.logs.append(message)
-        # Keep only last 20 logs
-        if len(self.logs) > 20:
-            self.logs = self.logs[-20:]
-        # Auto-refresh live display if available
-        if hasattr(self, 'live') and self.live and hasattr(self, '_progress'):
-            self.live.update(self.make_layout(self._progress))
+    def log(self, message: str, to_file_only: bool = False):
+        """Add a log message
+
+        Args:
+            message: Message to log (can contain rich markup)
+            to_file_only: If True, only write to file, don't add to display logs
+        """
+        # Write to file (strip rich markup for plain text)
+        import re
+        plain_message = re.sub(r'\[.*?\]', '', message)  # Remove rich markup
+        with open(self.log_file, 'a', encoding='utf-8') as f:
+            f.write(f"{plain_message}\n")
+
+        # Add to display logs unless file-only
+        if not to_file_only:
+            self.logs.append(message)
+            # Keep only last 20 logs
+            if len(self.logs) > 20:
+                self.logs = self.logs[-20:]
+            # Auto-refresh live display if available
+            if hasattr(self, 'live') and self.live and hasattr(self, '_progress'):
+                self.live.update(self.make_layout(self._progress))
     
     def run_command(self, cmd: List[str], cwd: Optional[Path] = None, capture: bool = False) -> subprocess.CompletedProcess:
         """Run a command and log output in real-time"""
         import threading
         import time
-        
+
         cmd_str = ' '.join(cmd[:4]) + ('...' if len(cmd) > 4 else '')
         self.log(f"[dim]$ {cmd_str}[/dim]")
-        
+
         try:
             # Use Popen for real-time output capture
             process = subprocess.Popen(
@@ -93,42 +115,68 @@ class ComfyUIInstaller:
                 text=True,
                 bufsize=1
             )
-            
+
             # Timer to show activity when no output
             last_output_time = [time.time()]
             stop_timer = [False]
             spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
             spinner_idx = [0]
-            
+            activity_log_idx = [None]  # Track which log entry is the activity indicator
+
             def activity_timer():
                 while not stop_timer[0]:
-                    time.sleep(0.5)
+                    time.sleep(0.1)  # Check more frequently
                     if time.time() - last_output_time[0] > 2 and not stop_timer[0]:
                         elapsed = int(time.time() - last_output_time[0])
                         spinner = spinner_chars[spinner_idx[0] % len(spinner_chars)]
                         spinner_idx[0] += 1
-                        # Update the last log line to show activity
-                        if self.logs and '[dim]Working' in self.logs[-1]:
-                            self.logs[-1] = f"[dim]{spinner} Working... ({elapsed}s)[/dim]"
+
+                        # Update or create activity indicator at a fixed position
+                        activity_msg = f"[dim]{spinner} Working... ({elapsed}s)[/dim]"
+
+                        if activity_log_idx[0] is not None and activity_log_idx[0] < len(self.logs):
+                            # Update existing activity log line
+                            self.logs[activity_log_idx[0]] = activity_msg
                         else:
-                            self.log(f"[dim]{spinner} Working... ({elapsed}s)[/dim]")
-            
+                            # Create new activity log line
+                            self.logs.append(activity_msg)
+                            activity_log_idx[0] = len(self.logs) - 1
+
+                        # Manual refresh to avoid excessive updates
+                        if hasattr(self, 'live') and self.live and hasattr(self, '_progress'):
+                            self.live.update(self.make_layout(self._progress))
+
             timer_thread = threading.Thread(target=activity_timer, daemon=True)
             timer_thread.start()
-            
+
             stdout_lines = []
             for line in process.stdout:
                 line = line.rstrip()
                 if line:
                     stdout_lines.append(line)
                     last_output_time[0] = time.time()
+
+                    # Clear activity indicator when we get real output
+                    if activity_log_idx[0] is not None and activity_log_idx[0] < len(self.logs):
+                        # Remove the activity indicator
+                        if self.logs[activity_log_idx[0]].startswith('[dim]⠋') or \
+                           self.logs[activity_log_idx[0]].startswith('[dim]⠙') or \
+                           '[dim]Working' in self.logs[activity_log_idx[0]]:
+                            self.logs.pop(activity_log_idx[0])
+                        activity_log_idx[0] = None
+
                     # Add output to log (limit line length)
                     display_line = line[:80] + '...' if len(line) > 80 else line
                     self.log(f"  {display_line}")
-            
+
             process.wait()
             stop_timer[0] = True
-            
+
+            # Clean up activity indicator after process completes
+            if activity_log_idx[0] is not None and activity_log_idx[0] < len(self.logs):
+                if '[dim]Working' in self.logs[activity_log_idx[0]]:
+                    self.logs.pop(activity_log_idx[0])
+
             stdout_text = '\n'.join(stdout_lines)
             return subprocess.CompletedProcess(
                 args=cmd,
@@ -181,6 +229,21 @@ class ComfyUIInstaller:
             self.log(f"[red]Failed to setup workflows symlink: {e}[/red]")
             return False
     
+    def install_project_requirements(self) -> bool:
+        """Install project requirements from root directory"""
+        req_file = self.install_dir / "requirements.txt"
+        if not req_file.exists():
+            self.log("[yellow]Project requirements.txt not found, skipping[/yellow]")
+            return True
+
+        self.log("[green]Installing project dependencies...[/green]")
+        result = self.run_command(
+            [sys.executable, "-m", "pip", "install", "-r", str(req_file)],
+            cwd=self.install_dir,
+            capture=True
+        )
+        return result.returncode == 0
+
     def install_requirements(self) -> bool:
         """Install ComfyUI requirements"""
         if self.skip_deps:
@@ -733,9 +796,10 @@ class ComfyUIInstaller:
         
         # Calculate total steps
         steps = [
+            ("Install project dependencies", self.install_project_requirements),
             ("Clone ComfyUI", lambda: self.clone_or_pull(self.COMFYUI_REPO, self.comfyui_dir, "ComfyUI")),
             ("Setup workflows directory", self.setup_workflows_symlink),
-            ("Install dependencies", self.install_requirements),
+            ("Install ComfyUI dependencies", self.install_requirements),
             ("Clone ComfyUI-Manager", lambda: self.clone_or_pull(self.MANAGER_REPO, self.manager_dir, "ComfyUI-Manager")),
             ("Clone Models-Downloader", lambda: self.clone_or_pull(self.MODELS_DOWNLOADER_REPO, self.models_downloader_dir, "Workflow-Models-Downloader")),
             ("Clone SaveAsScript", lambda: self.clone_or_pull(self.SAVE_AS_SCRIPT_REPO, self.save_as_script_dir, "SaveAsScript")),
@@ -755,7 +819,7 @@ class ComfyUIInstaller:
             expand=True
         )
         
-        with Live(self.make_layout(progress), console=self.console, refresh_per_second=8, transient=False) as live:
+        with Live(self.make_layout(progress), console=self.console, refresh_per_second=4, transient=False) as live:
             self.live = live  # Store reference for log updates
             self._progress = progress  # Store progress reference for log auto-refresh
             
@@ -1005,7 +1069,7 @@ class ComfyUIInstaller:
         """Display installation summary"""
         self.console.print()
         self.console.print(Panel.fit("[bold]Installation Summary[/bold]"))
-        
+
         # Installed nodes
         if self.installed_nodes:
             self.console.print(f"\n[green]✓ Installed {len(self.installed_nodes)} nodes:[/green]")
@@ -1013,7 +1077,7 @@ class ComfyUIInstaller:
                 self.console.print(f"  • {node}")
             if len(self.installed_nodes) > 10:
                 self.console.print(f"  ... and {len(self.installed_nodes) - 10} more")
-        
+
         # Failed nodes
         if self.failed_nodes:
             self.console.print(f"\n[red]✗ Failed to install {len(self.failed_nodes)} nodes:[/red]")
@@ -1023,14 +1087,14 @@ class ComfyUIInstaller:
             for node, error in self.failed_nodes:
                 table.add_row(node, error[:50] + "..." if len(error) > 50 else error)
             self.console.print(table)
-        
+
         # Unknown nodes
         if self.unknown_nodes:
             self.console.print(f"\n[yellow]⚠ Unknown nodes (not in ComfyUI-Manager database):[/yellow]")
             for node in self.unknown_nodes:
                 self.console.print(f"  • {node}")
             self.console.print("\n[dim]These nodes need to be installed manually or may not be available.[/dim]")
-        
+
         # Final status
         self.console.print()
         if not self.failed_nodes and not self.unknown_nodes:
@@ -1039,9 +1103,10 @@ class ComfyUIInstaller:
             self.console.print("[bold red]✗ Installation completed with errors[/bold red]")
         else:
             self.console.print("[bold yellow]⚠ Installation completed with warnings[/bold yellow]")
-        
+
         self.console.print(f"\n[dim]ComfyUI location: {self.comfyui_dir}[/dim]")
         self.console.print(f"[dim]Start with: cd {self.comfyui_dir} && python main.py[/dim]")
+        self.console.print(f"[dim]Full installation log saved to: {self.log_file}[/dim]")
 
 
 def scan_workflows(workflows_dir: Path) -> List[Path]:

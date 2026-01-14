@@ -1058,7 +1058,27 @@ class WorkflowParser:
         
         # 重新转换
         self.workflow_data = self._convert_to_api_format(self.raw_data)
-    
+
+    def set_node_mode(self, node_id: int, mode: int):
+        """设置指定节点的 mode
+
+        Args:
+            node_id: 节点 ID
+            mode: 0=启用, 4=bypass/禁用
+        """
+        if not self.raw_data or self.is_api_format:
+            return  # API 格式工作流没有 mode 字段
+
+        nodes = self.raw_data.get("nodes", [])
+        for node in nodes:
+            if node.get("id") == node_id:
+                node["mode"] = mode
+                print(f"设置节点 {node_id} ({node.get('type', 'Unknown')}) mode={mode}")
+                break
+
+        # 重新转换
+        self.workflow_data = self._convert_to_api_format(self.raw_data)
+
     def _is_api_format(self, data: Dict) -> bool:
         """判断是否是 API 格式"""
         # API 格式: 字典的 key 是节点 ID（字符串数字），value 包含 class_type
@@ -2392,9 +2412,28 @@ async def image_to_video(request: ImageToVideoRequest):
             images_dict[key] = img
 
     params["_images"] = images_dict
-    
+
+    # 处理 SageAttention 节点 bypass
+    # 如果传入 sage_attention_* 参数为 "disabled"，则 bypass 对应节点
+    if request.sage_attention_low == "disabled" or request.sage_attention_high == "disabled":
+        # 加载工作流并设置节点 mode
+        parser = WorkflowParser(wf["path"])
+        if request.sage_attention_low == "disabled":
+            parser.set_node_mode(1, 4)  # bypass 节点 1 (低噪声)
+        if request.sage_attention_high == "disabled":
+            parser.set_node_mode(2, 4)  # bypass 节点 2 (高噪声)
+        # 将修改后的工作流存为临时文件
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as f:
+            json.dump(parser.raw_data, f, ensure_ascii=False)
+            temp_workflow_path = f.name
+        # 使用临时工作流路径
+        workflow_path = temp_workflow_path
+    else:
+        workflow_path = wf["path"]
+
     task_id = task_manager.create_task(workflow_name, params)
-    task_queue.put((task_id, workflow_name, wf["path"], params))
+    task_queue.put((task_id, workflow_name, workflow_path, params))
     
     return TaskResponse(
         task_id=task_id,

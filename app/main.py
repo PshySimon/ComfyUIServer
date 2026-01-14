@@ -2397,7 +2397,9 @@ async def image_to_video(request: ImageToVideoRequest):
     }
     for param_name, param_value in param_mappings.items():
         if param_value is not None and param_name in input_mapping:
-            params[input_mapping[param_name]] = param_value
+            mapped_param = input_mapping[param_name]
+            params[mapped_param] = param_value
+            print(f"[DEBUG] 映射参数: {param_name} ({param_value}) -> {mapped_param}")
 
     # 映射图片
     for i, img in enumerate(request.images, 1):
@@ -2413,28 +2415,8 @@ async def image_to_video(request: ImageToVideoRequest):
 
     params["_images"] = images_dict
 
-    # 处理 SageAttention 节点 bypass
-    # 如果传入 sage_attention_* 参数为 "disabled"，则 bypass 对应节点
-    if request.sage_attention_low == "disabled" or request.sage_attention_high == "disabled":
-        # 加载工作流并设置节点 mode
-        parser = WorkflowParser(wf["path"])
-        parser.load()  # 必须先加载
-        if request.sage_attention_low == "disabled":
-            parser.set_node_mode(1, 4)  # bypass 节点 1 (低噪声)
-        if request.sage_attention_high == "disabled":
-            parser.set_node_mode(2, 4)  # bypass 节点 2 (高噪声)
-        # 将修改后的工作流存为临时文件
-        import tempfile
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as f:
-            json.dump(parser.raw_data, f, ensure_ascii=False)
-            temp_workflow_path = f.name
-        # 使用临时工作流路径
-        workflow_path = temp_workflow_path
-    else:
-        workflow_path = wf["path"]
-
     task_id = task_manager.create_task(workflow_name, params)
-    task_queue.put((task_id, workflow_name, workflow_path, params))
+    task_queue.put((task_id, workflow_name, wf["path"], params))
     
     return TaskResponse(
         task_id=task_id,

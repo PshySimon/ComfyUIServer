@@ -2418,6 +2418,7 @@ async def image_to_video(request: ImageToVideoRequest):
     if request.sage_attention_low == "disabled" or request.sage_attention_high == "disabled":
         # 加载工作流并设置节点 mode
         parser = WorkflowParser(wf["path"])
+        parser.load()  # 必须先加载
         if request.sage_attention_low == "disabled":
             parser.set_node_mode(1, 4)  # bypass 节点 1 (低噪声)
         if request.sage_attention_high == "disabled":

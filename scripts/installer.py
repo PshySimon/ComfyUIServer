@@ -73,7 +73,20 @@ class ComfyUIInstaller:
             f.write(f"=== ComfyUI Installation Log ===\n")
             f.write(f"Started at: {__import__('datetime').datetime.now()}\n")
             f.write(f"Install directory: {self.install_dir}\n\n")
-        
+
+        # Throttle mechanism to prevent excessive refreshes
+        self._last_refresh_time = 0
+        self._min_refresh_interval = 0.25  # Minimum 250ms between refreshes
+
+    def _throttled_refresh(self):
+        """Refresh the live display with throttling to prevent flicker"""
+        import time
+        current_time = time.time()
+        if current_time - self._last_refresh_time >= self._min_refresh_interval:
+            if hasattr(self, 'live') and self.live and hasattr(self, '_progress'):
+                self.live.update(self.make_layout(self._progress))
+                self._last_refresh_time = current_time
+
     def log(self, message: str, to_file_only: bool = False):
         """Add a log message
 
@@ -93,9 +106,8 @@ class ComfyUIInstaller:
             # Keep only last 20 logs
             if len(self.logs) > 20:
                 self.logs = self.logs[-20:]
-            # Auto-refresh live display if available
-            if hasattr(self, 'live') and self.live and hasattr(self, '_progress'):
-                self.live.update(self.make_layout(self._progress))
+            # Use throttled refresh instead of immediate refresh
+            self._throttled_refresh()
     
     def run_command(self, cmd: List[str], cwd: Optional[Path] = None, capture: bool = False) -> subprocess.CompletedProcess:
         """Run a command and log output in real-time"""
@@ -142,9 +154,8 @@ class ComfyUIInstaller:
                             self.logs.append(activity_msg)
                             activity_log_idx[0] = len(self.logs) - 1
 
-                        # Manual refresh to avoid excessive updates
-                        if hasattr(self, 'live') and self.live and hasattr(self, '_progress'):
-                            self.live.update(self.make_layout(self._progress))
+                        # Use throttled refresh to avoid excessive updates
+                        self._throttled_refresh()
 
             timer_thread = threading.Thread(target=activity_timer, daemon=True)
             timer_thread.start()
@@ -819,7 +830,7 @@ class ComfyUIInstaller:
             expand=True
         )
         
-        with Live(self.make_layout(progress), console=self.console, refresh_per_second=4, transient=False) as live:
+        with Live(self.make_layout(progress), console=self.console, refresh_per_second=2, transient=False) as live:
             self.live = live  # Store reference for log updates
             self._progress = progress  # Store progress reference for log auto-refresh
             

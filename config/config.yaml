@@ -137,6 +137,8 @@ workflows:
       frames: "value_59"            # 帧数（默认 81，即约 5 秒）
       steps: "value_57"             # 总步数（默认 6）
       seed: "noise_seed_54"         # 随机种子
+      sage_attention_low: "sage_attention_1"   # 低噪声 Sage Attention (auto/enabled/disabled)
+      sage_attention_high: "sage_attention_2"  # 高噪声 Sage Attention (auto/enabled/disabled)
     outputs:
       video: "VHS_VideoCombine"     # 输出视频
 

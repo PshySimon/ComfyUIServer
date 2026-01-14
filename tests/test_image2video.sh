@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # 测试脚本：图生视频接口
-# Base URL
-BASE_URL="https://u981-82ab-bcba52bd.singapore-a.gpuhub.com:8443"
+# Base URL - 本地测试默认使用 6006 端口（与 run.sh 保持一致）
+BASE_URL="${BASE_URL:-http://localhost:6006}"
 
 # 图片文件
 IMAGE_FILE="橘猫.jpg"
@@ -29,11 +29,13 @@ echo ""
 
 # 将图片转换为 base64
 echo "正在转换图片为 base64..."
-IMAGE_BASE64=$(base64 -i "$IMAGE_FILE" 2>/dev/null || base64 "$IMAGE_FILE" 2>/dev/null)
+IMAGE_BASE64=$(base64 -i "$IMAGE_FILE" 2>/dev/null || base64 "$IMAGE_FILE" 2>/dev/null | tr -d '\n')
 if [ $? -ne 0 ]; then
     echo "错误: 无法转换图片为 base64"
     exit 1
 fi
+# 确保移除所有换行符
+IMAGE_BASE64=$(echo "$IMAGE_BASE64" | tr -d '\n')
 echo "✓ 图片转换完成 (长度: ${#IMAGE_BASE64} 字符)"
 echo ""
 
@@ -44,7 +46,9 @@ RESPONSE=$(curl -s -X POST "$BASE_URL/image-to-video" \
     -d "{
         \"model\": \"wan22_remix_i2v\",
         \"images\": [\"$IMAGE_BASE64\"],
-        \"positive_prompt\": \"橘猫摇了摇头\"
+        \"positive_prompt\": \"橘猫摇了摇头\",
+        \"sage_attention_low\": \"disabled\",
+        \"sage_attention_high\": \"disabled\"
     }")
 
 if [ $? -ne 0 ]; then

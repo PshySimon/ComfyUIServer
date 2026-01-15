@@ -900,8 +900,8 @@ class ModelDownloader:
         # aria2c command with optimized settings for cloud environment
         cmd = [
             "aria2c",
-            "--check-certificate=false",    # MUST be early: Disable SSL certificate verification
-            "--allow-overwrite=true",       # Allow overwriting existing files
+            "--check-certificate", "false",  # Space-separated format (some versions require this)
+            "--allow-overwrite=true",        # Allow overwriting existing files
             "-d", str(target_dir),
             "-o", filename,
             "-s", "8",                      # 8 connections (减少以避免慢连接)

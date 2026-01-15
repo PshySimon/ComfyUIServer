@@ -1620,9 +1620,12 @@ def main():
         success = installer.check_dependencies()
     else:
         success = installer.run()
-        
-        # After successful installation, download models if requested
-        if success and download_models and workflow_file:
+
+        # After installation, download models if requested
+        # Note: Download models even if some nodes failed - user may want to manually fix node issues later
+        # DEBUG: Log the conditions
+        installer.log(f"[dim]DEBUG: Checking model download conditions - success={success}, download_models={download_models}, workflow_file={workflow_file is not None}[/dim]", to_file_only=True)
+        if download_models and workflow_file:
             console.print("\n")
             console.print(Panel("[bold cyan]Starting Model Download[/bold cyan]", expand=False))
             

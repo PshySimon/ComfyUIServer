@@ -943,7 +943,9 @@ class ModelDownloader:
         Returns:
             Tuple of (downloaded, skipped, failed) model names
         """
-        self.console.clear()
+        # Don't clear console to preserve installer output
+        # self.console.clear()
+        self.console.print("\n")
         self.console.print(Panel(
             "[bold cyan]ComfyUI Model Downloader[/bold cyan]\n"
             f"  Models dir: {self.models_dir}",

@@ -1623,11 +1623,11 @@ def main():
 
         # After installation, download models if requested
         # Note: Download models even if some nodes failed - user may want to manually fix node issues later
-        # DEBUG: Log the conditions
-        print(f"DEBUG: download_models={download_models}, workflow_file={workflow_file}")
+        installer.log(f"[yellow]DEBUG: download_models={download_models}, workflow_file={workflow_file}[/yellow]")
         installer.log(f"[dim]DEBUG: Checking model download conditions - success={success}, download_models={download_models}, workflow_file={workflow_file is not None}[/dim]", to_file_only=True)
+
         if download_models and workflow_file:
-            print("DEBUG: Entering model download block")
+            installer.log(f"[yellow]DEBUG: Entering model download block[/yellow]")
             console.print("\n")
             console.print(Panel("[bold cyan]Starting Model Download[/bold cyan]", expand=False))
 
@@ -1646,7 +1646,7 @@ def main():
                 console.print("\n")
                 installer.show_summary()
             except Exception as e:
-                print(f"DEBUG: Model download failed with exception: {e}")
+                installer.log(f"[red]DEBUG: Model download failed with exception: {e}[/red]")
                 import traceback
                 traceback.print_exc()
                 raise

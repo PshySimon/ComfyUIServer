@@ -1628,16 +1628,23 @@ def main():
 
         if download_models and workflow_file:
             installer.log(f"[yellow]DEBUG: Entering model download block[/yellow]")
-            console.print("\n")
-            console.print(Panel("[bold cyan]Starting Model Download[/bold cyan]", expand=False))
 
             try:
+                installer.log(f"[yellow]DEBUG: About to import ModelDownloader[/yellow]")
                 from model_downloader import ModelDownloader
+                installer.log(f"[yellow]DEBUG: ModelDownloader imported successfully[/yellow]")
+
+                console.print("\n")
+                console.print(Panel("[bold cyan]Starting Model Download[/bold cyan]", expand=False))
+
+                installer.log(f"[yellow]DEBUG: About to create ModelDownloader instance[/yellow]")
                 downloader = ModelDownloader(
                     comfyui_dir=install_dir / "ComfyUI",
                     workflow_file=workflow_file
                 )
+                installer.log(f"[yellow]DEBUG: ModelDownloader instance created, calling run()[/yellow]")
                 downloaded, skipped, failed = downloader.run()
+                installer.log(f"[yellow]DEBUG: ModelDownloader.run() completed - downloaded={downloaded}, skipped={skipped}, failed={failed}[/yellow]")
 
                 if failed:
                     success = False

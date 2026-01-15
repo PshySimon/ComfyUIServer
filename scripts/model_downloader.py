@@ -9,6 +9,7 @@ import sys
 import json
 import subprocess
 import shutil
+import ssl
 import urllib.request
 import urllib.error
 import re
@@ -120,7 +121,14 @@ class ModelDownloader:
             self.logs = self.logs[-30:]
         # Actually print the message to console
         self.console.print(message)
-    
+
+    def _create_ssl_context(self):
+        """Create SSL context that bypasses certificate verification for proxy environments"""
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        return context
+
     def ensure_aria2(self) -> bool:
         """Ensure aria2 is installed"""
         if shutil.which("aria2c"):
@@ -207,7 +215,7 @@ class ModelDownloader:
                 self.POPULAR_MODELS_URL,
                 headers={'User-Agent': 'ComfyUI-ModelDownloader/1.0'}
             )
-            with urllib.request.urlopen(req, timeout=30) as response:
+            with urllib.request.urlopen(req, timeout=30, context=self._create_ssl_context()) as response:
                 data = json.loads(response.read().decode('utf-8'))
                 self._popular_models = data.get("models", {})
                 self.log(f"[green]Loaded {len(self._popular_models)} popular models[/green]")
@@ -241,7 +249,7 @@ class ModelDownloader:
                 self.COMFYUI_MANAGER_MODELS_URL,
                 headers={'User-Agent': 'ComfyUI-ModelDownloader/1.0'}
             )
-            with urllib.request.urlopen(req, timeout=30) as response:
+            with urllib.request.urlopen(req, timeout=30, context=self._create_ssl_context()) as response:
                 data = json.loads(response.read().decode('utf-8'))
                 self._manager_models = data.get("models", [])
                 self.log(f"[green]Loaded {len(self._manager_models)} models from Manager list[/green]")
@@ -519,8 +527,8 @@ class ModelDownloader:
                 search_url,
                 headers=self._get_browser_headers()
             )
-            
-            with urllib.request.urlopen(req, timeout=15) as response:
+
+            with urllib.request.urlopen(req, timeout=15, context=self._create_ssl_context()) as response:
                 html = response.read().decode('utf-8', errors='ignore')
                 
                 # Brave Search 直接返回 HuggingFace 链接
@@ -648,7 +656,7 @@ class ModelDownloader:
                 req = urllib.request.Request(url, headers={'User-Agent': 'ComfyUI-ModelDownloader/1.0'})
                 
                 try:
-                    with urllib.request.urlopen(req, timeout=15) as response:
+                    with urllib.request.urlopen(req, timeout=15, context=self._create_ssl_context()) as response:
                         results = json.loads(response.read().decode('utf-8'))
                         
                         for result in results:
@@ -799,7 +807,7 @@ class ModelDownloader:
         """通过 HEAD 请求获取文件大小"""
         try:
             req = urllib.request.Request(url, method='HEAD', headers={'User-Agent': 'ComfyUI-ModelDownloader/1.0'})
-            with urllib.request.urlopen(req, timeout=10) as response:
+            with urllib.request.urlopen(req, timeout=10, context=self._create_ssl_context()) as response:
                 content_length = response.headers.get('Content-Length')
                 if content_length:
                     return int(content_length)

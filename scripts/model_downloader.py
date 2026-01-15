@@ -878,6 +878,9 @@ class ModelDownloader:
         target_file = target_dir / filename
         aria2_control_file = target_dir / f"{filename}.aria2"
 
+        # Replace HuggingFace URL with mirror to bypass SSL issues
+        download_url = model.url.replace('https://huggingface.co/', 'https://hf-mirror.com/')
+
         # 检查文件是否已完整下载（存在且大小 > 1KB）
         if target_file.exists() and target_file.stat().st_size > 1024:
             # 如果有 .aria2 控制文件，说明之前下载中断，需要续传
@@ -895,8 +898,8 @@ class ModelDownloader:
                 aria2_control_file.unlink()
 
         self.log(f"[cyan]Downloading {model.name} to {model.directory}/[/cyan]")
-        self.log(f"[dim]URL: {model.url[:80]}...[/dim]")
-        
+        self.log(f"[dim]URL: {download_url[:80]}...[/dim]")
+
         # aria2c command with optimized settings for cloud environment
         cmd = [
             "aria2c",
@@ -919,7 +922,7 @@ class ModelDownloader:
             "--summary-interval=1",
             "--console-log-level=notice",
             "--download-result=hide",
-            model.url
+            download_url  # Use mirror URL instead of original
         ]
         
         try:

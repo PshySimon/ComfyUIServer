@@ -34,6 +34,11 @@ configure_proxy() {
         echo "✓ git https.proxy configured"
     fi
 
+    # Additional git settings for proxy environments (helps GitPython)
+    git config --global http.sslVerify false 2>/dev/null
+    git config --global https.sslVerify false 2>/dev/null
+    echo "✓ git SSL verification disabled for proxy environment"
+
     echo ""
     echo "Proxy configuration complete!"
     echo "Note: SSL certificate issues will be handled automatically by the installer."

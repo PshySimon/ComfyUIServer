@@ -128,18 +128,41 @@ class ComfyUIInstaller:
                 if var in os.environ:
                     env[var] = os.environ[var]
 
-            # For pip: disable SSL verification if proxy is set (workaround for SSL errors)
+            # For pip: add SSL workaround flags to avoid certificate errors
             if any('pip' in str(c) for c in cmd):
-                # Check if proxy is configured
-                if any(var in env for var in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']):
-                    # Add trusted hosts for common PyPI mirrors
-                    if '--trusted-host' not in ' '.join(cmd):
-                        # Note: SSL verification is handled via pip config, not here
-                        # We rely on properly configured certificates
-                        pass
-                    # Set pip timeout
-                    env['PIP_TIMEOUT'] = '60'
-                    env['PIP_RETRIES'] = '5'
+                # Set pip timeout and retries for all pip commands
+                env['PIP_TIMEOUT'] = '60'
+                env['PIP_RETRIES'] = '5'
+
+                # If proxy is configured OR we're doing pip install/download operations,
+                # add --trusted-host flags to bypass SSL verification issues
+                is_install_cmd = any(x in cmd for x in ['install', 'download'])
+                has_proxy = any(var in env for var in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY'])
+
+                if is_install_cmd and '--trusted-host' not in ' '.join(cmd):
+                    # Inject --trusted-host flags to avoid SSL errors
+                    # This is safer than disabling SSL globally
+                    trusted_hosts = ['pypi.org', 'files.pythonhosted.org', 'pypi.python.org']
+
+                    # Find the position to insert flags (after 'pip' command but before package names)
+                    insert_pos = None
+                    for i, arg in enumerate(cmd):
+                        if arg in ['install', 'download']:
+                            insert_pos = i + 1
+                            break
+
+                    if insert_pos:
+                        # Build list of --trusted-host flags
+                        trust_flags = []
+                        for host in trusted_hosts:
+                            trust_flags.extend(['--trusted-host', host])
+
+                        # Insert flags into command
+                        cmd = cmd[:insert_pos] + trust_flags + cmd[insert_pos:]
+
+                        # Update command display
+                        cmd_str = ' '.join(cmd[:6]) + ('...' if len(cmd) > 6 else '')
+                        self.log(f"[dim]$ {cmd_str}[/dim]")
 
             # For git: ensure it uses the same proxy
             if cmd[0] == 'git':

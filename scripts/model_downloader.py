@@ -952,11 +952,14 @@ class ModelDownloader:
             expand=False,
             padding=(0, 2)
         ))
-        
+
+        self.log("[yellow]DEBUG: Checking aria2...[/yellow]")
         # Ensure aria2 is installed
         if not self.ensure_aria2():
+            self.log("[red]DEBUG: aria2 not available, returning early[/red]")
             return [], [], ["aria2 not available"]
-        
+
+        self.log("[yellow]DEBUG: About to extract models from workflow[/yellow]")
         # Get models to download
         models_to_process = {}
         if model_names is not None:
@@ -964,9 +967,11 @@ class ModelDownloader:
             models_to_process = {name: None for name in model_names}
         else:
             models_to_process = self.extract_models_from_workflow()
-        
+
+        self.log(f"[yellow]DEBUG: Extracted {len(models_to_process) if models_to_process else 0} models from workflow[/yellow]")
         if not models_to_process:
             self.console.print("[yellow]No models to download[/yellow]")
+            self.log("[yellow]DEBUG: No models found, returning empty lists[/yellow]")
             return [], [], []
         
         # Get local models

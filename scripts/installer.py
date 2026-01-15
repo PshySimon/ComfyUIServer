@@ -118,6 +118,37 @@ class ComfyUIInstaller:
         self.log(f"[dim]$ {cmd_str}[/dim]")
 
         try:
+            # Prepare environment with proxy settings
+            env = os.environ.copy()
+
+            # Ensure proxy variables are propagated (case variations)
+            proxy_vars = ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY',
+                         'no_proxy', 'NO_PROXY', 'all_proxy', 'ALL_PROXY']
+            for var in proxy_vars:
+                if var in os.environ:
+                    env[var] = os.environ[var]
+
+            # For pip: disable SSL verification if proxy is set (workaround for SSL errors)
+            if any('pip' in str(c) for c in cmd):
+                # Check if proxy is configured
+                if any(var in env for var in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']):
+                    # Add trusted hosts for common PyPI mirrors
+                    if '--trusted-host' not in ' '.join(cmd):
+                        # Note: SSL verification is handled via pip config, not here
+                        # We rely on properly configured certificates
+                        pass
+                    # Set pip timeout
+                    env['PIP_TIMEOUT'] = '60'
+                    env['PIP_RETRIES'] = '5'
+
+            # For git: ensure it uses the same proxy
+            if cmd[0] == 'git':
+                # Git will automatically use http_proxy/https_proxy from env
+                # Force git to use http.sslVerify if SSL errors occur
+                # Users can disable SSL verification globally with:
+                # git config --global http.sslVerify false
+                pass
+
             # Use Popen for real-time output capture
             process = subprocess.Popen(
                 cmd,
@@ -125,7 +156,8 @@ class ComfyUIInstaller:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                bufsize=1
+                bufsize=1,
+                env=env  # Pass the environment with proxy settings
             )
 
             # Timer to show activity when no output

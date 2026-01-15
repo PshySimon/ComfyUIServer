@@ -1569,8 +1569,9 @@ def main():
     
     # Interactive mode: if no workflow specified and not in check mode
     workflow_file = None
+    # Default to download models if workflow is provided (unless explicitly disabled)
     download_models = args.download_models
-    
+
     if args.workflow:
         # Workflow specified via argument
         workflow_path = Path(args.workflow)
@@ -1578,6 +1579,8 @@ def main():
             workflow_path = Path.cwd() / workflow_path
         if workflow_path.exists():
             workflow_file = str(workflow_path)
+            # When workflow is specified via -w, default to downloading models
+            download_models = True
         else:
             print(f"Error: Workflow file not found: {workflow_path}")
             sys.exit(1)

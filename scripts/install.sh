@@ -87,9 +87,14 @@ if [ -n "$http_proxy" ] || [ -n "$https_proxy" ] || [ -n "$HTTP_PROXY" ] || [ -n
     fi
 fi
 
-# Install rich if not available
+# Install required Python packages from requirements.txt
 echo "Installing required Python packages..."
-python -c "import rich" 2>/dev/null || pip install rich -q
+if [ -f "$PROJECT_ROOT/requirements.txt" ]; then
+    pip install -r "$PROJECT_ROOT/requirements.txt" -q
+else
+    # Fallback: install rich if requirements.txt not found
+    python -c "import rich" 2>/dev/null || pip install rich -q
+fi
 
 # Run the Python installer (install to project root, not scripts dir)
 python "$SCRIPT_DIR/installer.py" --install-dir "$PROJECT_ROOT" "$@"

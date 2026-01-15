@@ -114,6 +114,7 @@ class ModelDownloader:
         # Caches
         self._popular_models: Optional[Dict] = None
         self._manager_models: Optional[List] = None
+        self._repo_file_cache: Dict[str, List[Dict]] = {}  # Cache repo file trees by repo_id
         
     def log(self, message: str):
         """Add a log message and print it"""
@@ -728,58 +729,84 @@ class ModelDownloader:
                 variants.append(variant)
         
         return variants
-    
+
+    def _get_repo_file_tree(self, repo_id: str) -> List[Dict]:
+        """Get complete file tree for a HuggingFace repo (cached)"""
+        # Check cache first
+        if repo_id in self._repo_file_cache:
+            return self._repo_file_cache[repo_id]
+
+        all_files = []
+
+        def fetch_tree(path: str = ""):
+            """Recursively fetch file tree from HuggingFace API"""
+            try:
+                tree_path = f"/{path}" if path else ""
+                url = f"https://huggingface.co/api/models/{repo_id}/tree/main{tree_path}"
+
+                req = urllib.request.Request(url, headers={'User-Agent': 'ComfyUI-ModelDownloader/1.0'})
+
+                with urllib.request.urlopen(req, timeout=10, context=self._create_ssl_context()) as response:
+                    content = response.read().decode('utf-8')
+
+                    # Handle text redirects
+                    if content.startswith('Temporary Redirect') or content.startswith('Permanent Redirect'):
+                        import re
+                        redirect_match = re.search(r'Redirecting to (/api/models/[^\s]+)', content)
+                        if redirect_match:
+                            new_url = f"https://huggingface.co{redirect_match.group(1)}"
+                            req2 = urllib.request.Request(new_url, headers={'User-Agent': 'ComfyUI-ModelDownloader/1.0'})
+                            with urllib.request.urlopen(req2, timeout=10, context=self._create_ssl_context()) as response2:
+                                content = response2.read().decode('utf-8')
+
+                    items = json.loads(content)
+
+                    for item in items:
+                        item_path = item.get('path', '')
+                        item_type = item.get('type', '')
+
+                        if item_type == 'file':
+                            all_files.append(item)
+                        elif item_type == 'directory' and item_path.count('/') < 3:
+                            # Recursively fetch subdirectories (max 3 levels)
+                            fetch_tree(item_path)
+            except:
+                pass
+
+        # Fetch complete tree
+        fetch_tree()
+
+        # Cache it
+        self._repo_file_cache[repo_id] = all_files
+        return all_files
+
     def _search_repo_for_file(self, repo_id: str, filename: str, path: str = "") -> Optional[str]:
-        """Recursively search a HuggingFace repo for a file with fuzzy matching"""
+        """Search a HuggingFace repo for a file with fuzzy matching (uses cached file tree)"""
         try:
-            tree_path = f"/{path}" if path else ""
-            url = f"https://huggingface.co/api/models/{repo_id}/tree/main{tree_path}"
-            
-            # 使用 opener 来自动处理重定向
-            opener = urllib.request.build_opener(urllib.request.HTTPRedirectHandler())
-            req = urllib.request.Request(url, headers={'User-Agent': 'ComfyUI-ModelDownloader/1.0'})
-            
-            with opener.open(req, timeout=10) as response:
-                content = response.read().decode('utf-8')
-                
-                # 检查是否是重定向响应（文本形式）
-                if content.startswith('Temporary Redirect') or content.startswith('Permanent Redirect'):
-                    # 提取重定向 URL
-                    import re
-                    redirect_match = re.search(r'Redirecting to (/api/models/[^\s]+)', content)
-                    if redirect_match:
-                        new_url = f"https://huggingface.co{redirect_match.group(1)}"
-                        req2 = urllib.request.Request(new_url, headers={'User-Agent': 'ComfyUI-ModelDownloader/1.0'})
-                        with opener.open(req2, timeout=10) as response2:
-                            content = response2.read().decode('utf-8')
-                
-                items = json.loads(content)
-                
-                # Generate filename variants to try (exact match first, then fuzzy)
-                filename_variants = self._generate_filename_variants(filename)
-                self.log(f"[dim]  Variants: {len(filename_variants)}[/dim]")
-                
-                for item in items:
-                    item_path = item.get('path', '')
-                    item_type = item.get('type', '')
-                    
-                    if item_type == 'file':
-                        item_filename = Path(item_path).name
-                        # Try each variant
-                        for variant in filename_variants:
-                            if item_filename == variant:
-                                if variant != filename:
-                                    self.log(f"[yellow]⚡ Fuzzy match: {filename} → {variant}[/yellow]")
-                                return f"https://huggingface.co/{repo_id}/resolve/main/{item_path}"
-                    elif item_type == 'directory':
-                        # Recursively search subdirectory (limit depth)
-                        if item_path.count('/') < 3:  # Max 3 levels deep
-                            result = self._search_repo_for_file(repo_id, filename, item_path)
-                            if result:
-                                return result
-        except:
+            # Get complete file tree (cached)
+            all_files = self._get_repo_file_tree(repo_id)
+
+            if not all_files:
+                return None
+
+            # Generate filename variants for fuzzy matching
+            filename_variants = self._generate_filename_variants(filename)
+
+            # Search through all files
+            for item in all_files:
+                item_path = item.get('path', '')
+                item_filename = Path(item_path).name
+
+                # Try each variant
+                for variant in filename_variants:
+                    if item_filename == variant:
+                        if variant != filename:
+                            self.log(f"[yellow]⚡ Fuzzy match: {filename} → {variant}[/yellow]")
+                        return f"https://huggingface.co/{repo_id}/resolve/main/{item_path}"
+
+        except Exception as e:
             pass
-        
+
         return None
     
     def get_local_models(self) -> set:
@@ -874,6 +901,8 @@ class ModelDownloader:
         # aria2c command with optimized settings for cloud environment
         cmd = [
             "aria2c",
+            "--check-certificate=false",    # MUST be early: Disable SSL certificate verification
+            "--allow-overwrite=true",       # Allow overwriting existing files
             "-d", str(target_dir),
             "-o", filename,
             "-s", "8",                      # 8 connections (减少以避免慢连接)
@@ -890,7 +919,6 @@ class ModelDownloader:
             "--summary-interval=1",
             "--console-log-level=notice",
             "--download-result=hide",
-            "--check-certificate=false",    # Disable SSL certificate verification for proxy environments
             model.url
         ]
         

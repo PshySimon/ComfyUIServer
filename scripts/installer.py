@@ -590,9 +590,36 @@ class ComfyUIInstaller:
     def find_all_repos_for_node(self, node_type: str, node_map: Dict) -> List[str]:
         """Find ALL repos that provide a node type (not just the first one)."""
         repos = []
+
+        # Try exact match first
         for repo_url, (node_list, _meta) in node_map.items():
             if node_type in node_list:
                 repos.append(repo_url)
+
+        if repos:
+            return repos
+
+        # If no exact match and node has suffix like " (rgthree)", try suffix-based matching
+        import re
+        suffix_match = re.search(r'\s*\(([^)]+)\)$', node_type)
+        if suffix_match:
+            suffix = suffix_match.group(1).lower()
+            base_name = node_type[:suffix_match.start()].strip()
+
+            # Known suffix to repo mappings
+            suffix_to_repo = {
+                'rgthree': 'https://github.com/rgthree/rgthree-comfy',
+                'kjnodes': 'https://github.com/kijai/ComfyUI-KJNodes',
+                'was': 'https://github.com/WASasquatch/was-node-suite-comfyui',
+                'was-node-suite-comfyui': 'https://github.com/WASasquatch/was-node-suite-comfyui',
+            }
+
+            repo_url = suffix_to_repo.get(suffix)
+            if repo_url and repo_url in node_map:
+                self.log(f"[dim]DEBUG: Matched '{node_type}' to {repo_url} via suffix '{suffix}'[/dim]", to_file_only=True)
+                repos.append(repo_url)
+                return repos
+
         return repos
     
     def build_package_scores(self, workflow_nodes: List[str], node_map: Dict) -> Dict[str, int]:

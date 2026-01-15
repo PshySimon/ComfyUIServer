@@ -44,7 +44,7 @@
           ]
         }
       ],
-      "title": "低噪声-Patch Sage Attention KJ",
+      "title": "\u4f4e\u566a\u58f0-Patch Sage Attention KJ",
       "properties": {
         "Node name for S&R": "PathchSageAttentionKJ",
         "cnr_id": "comfyui-kjnodes",
@@ -106,7 +106,7 @@
           ]
         }
       ],
-      "title": "高噪声-Patch Sage Attention KJ",
+      "title": "\u9ad8\u566a\u58f0-Patch Sage Attention KJ",
       "properties": {
         "Node name for S&R": "PathchSageAttentionKJ",
         "cnr_id": "comfyui-kjnodes",
@@ -852,7 +852,7 @@
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        "帧数\n例：81=16X5+1=5秒"
+        "\u5e27\u6570\n\u4f8b\uff1a81=16X5+1=5\u79d2"
       ],
       "color": "#233",
       "bgcolor": "#355"
@@ -882,7 +882,7 @@
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        "如果出现SAGE/Torch类报错，或者卡采样器\n\n按上面按钮关闭加速模组"
+        "\u5982\u679c\u51fa\u73b0SAGE/Torch\u7c7b\u62a5\u9519\uff0c\u6216\u8005\u5361\u91c7\u6837\u5668\n\n\u6309\u4e0a\u9762\u6309\u94ae\u5173\u95ed\u52a0\u901f\u6a21\u7ec4"
       ],
       "color": "#ff1414",
       "bgcolor": "#ff0000"
@@ -1081,7 +1081,7 @@
       ],
       "properties": {
         "matchColors": "",
-        "matchTitle": "加速",
+        "matchTitle": "\u52a0\u901f",
         "showNav": true,
         "sort": "position",
         "customSortAlphabet": "",
@@ -1208,7 +1208,7 @@
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        "总步数"
+        "\u603b\u6b65\u6570"
       ],
       "color": "#233",
       "bgcolor": "#355"
@@ -2099,7 +2099,7 @@
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        "高噪步数"
+        "\u9ad8\u566a\u6b65\u6570"
       ],
       "color": "#233",
       "bgcolor": "#355"
@@ -2845,7 +2845,7 @@
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        "最长边"
+        "\u6700\u957f\u8fb9"
       ],
       "color": "#233",
       "bgcolor": "#355"
@@ -2953,7 +2953,7 @@
           "label": "images",
           "name": "images",
           "type": "IMAGE",
-          "link": 64
+          "link": 65
         },
         {
           "label": "audio",
@@ -3091,125 +3091,6 @@
       "color": "#323",
       "bgcolor": "#535",
       "shape": 2
-    },
-    {
-      "id": 60,
-      "type": "RIFE VFI",
-      "pos": [
-        7638.37255859375,
-        2645.422119140625
-      ],
-      "size": [
-        289.6578063964844,
-        198
-      ],
-      "flags": {
-        "collapsed": false
-      },
-      "order": 68,
-      "mode": 0,
-      "inputs": [
-        {
-          "label": "frames",
-          "name": "frames",
-          "type": "IMAGE",
-          "link": 65
-        },
-        {
-          "label": "optional_interpolation_states",
-          "name": "optional_interpolation_states",
-          "shape": 7,
-          "type": "INTERPOLATION_STATES"
-        },
-        {
-          "label": "rife_name",
-          "name": "rife_name",
-          "type": "COMBO",
-          "widget": {
-            "name": "rife_name"
-          }
-        },
-        {
-          "label": "clear_cache_after_n_frames",
-          "name": "clear_cache_after_n_frames",
-          "type": "INT",
-          "widget": {
-            "name": "clear_cache_after_n_frames"
-          }
-        },
-        {
-          "label": "multiplier",
-          "name": "multiplier",
-          "type": "INT",
-          "widget": {
-            "name": "multiplier"
-          }
-        },
-        {
-          "label": "fast_mode",
-          "name": "fast_mode",
-          "type": "BOOLEAN",
-          "widget": {
-            "name": "fast_mode"
-          }
-        },
-        {
-          "label": "ensemble",
-          "name": "ensemble",
-          "type": "BOOLEAN",
-          "widget": {
-            "name": "ensemble"
-          }
-        },
-        {
-          "label": "scale_factor",
-          "name": "scale_factor",
-          "type": "COMBO",
-          "widget": {
-            "name": "scale_factor"
-          }
-        }
-      ],
-      "outputs": [
-        {
-          "label": "IMAGE",
-          "name": "IMAGE",
-          "type": "IMAGE",
-          "slot_index": 0,
-          "links": [
-            64
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "RIFE VFI",
-        "cnr_id": "comfyui-frame-interpolation",
-        "ver": "1.0.6",
-        "ue_properties": {
-          "widget_ue_connectable": {
-            "ckpt_name": true,
-            "fast_mode": true,
-            "multiplier": true,
-            "clear_cache_after_n_frames": true,
-            "ensemble": true,
-            "scale_factor": true
-          },
-          "version": "7.0.1"
-        },
-        "widget_ue_connectable": {},
-        "aux_id": "eddyhhlure1Eddy/comfyui-frame-interpolation_cudafull"
-      },
-      "widgets_values": [
-        "rife47.pth",
-        8,
-        2,
-        true,
-        true,
-        1
-      ],
-      "color": "#9f6464",
-      "bgcolor": "#8b5050",
-      "shape": 1
     },
     {
       "id": 20,
@@ -3891,7 +3772,7 @@
         }
       },
       "widgets_values": [
-        "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走, censored, mosaic censoring, bar censor, pixelated, glowing, bloom, blurry, day, out of focus, low detail, bad anatomy, ugly, overexposed, underexposed, distorted face, extra limbs, cartoonish, 3d render artifacts, duplicate people, unnatural lighting, bad composition, missing shadows, low resolution, poorly textured, glitch, noise, grain, static, motionless, still frame, overall grayish, worst quality, low quality, JPEG compression artifacts, subtitles, stylized, artwork, painting, illustration, cluttered background, many people in background, three legs, walking backward, zoom out, zoom in, mouth speaking, moving mouth, talking, speaking, mute speaking, unnatural skin tone, discolored eyelid, red eyelids, red upper eyelids, no red eyeshadow, closed eyes, no wide-open innocent eyes, poorly drawn hands, extra fingers, fused fingers, poorly drawn face, deformed, disfigured, malformed limbs, thighs, fog, mist, voluminous eyelashes, blush, disappearing, floating, breaking, splitting, duplicated, fragmented, glitchy"
+        "\u8272\u8c03\u8273\u4e3d\uff0c\u8fc7\u66dd\uff0c\u9759\u6001\uff0c\u7ec6\u8282\u6a21\u7cca\u4e0d\u6e05\uff0c\u5b57\u5e55\uff0c\u98ce\u683c\uff0c\u4f5c\u54c1\uff0c\u753b\u4f5c\uff0c\u753b\u9762\uff0c\u9759\u6b62\uff0c\u6574\u4f53\u53d1\u7070\uff0c\u6700\u5dee\u8d28\u91cf\uff0c\u4f4e\u8d28\u91cf\uff0cJPEG\u538b\u7f29\u6b8b\u7559\uff0c\u4e11\u964b\u7684\uff0c\u6b8b\u7f3a\u7684\uff0c\u591a\u4f59\u7684\u624b\u6307\uff0c\u753b\u5f97\u4e0d\u597d\u7684\u624b\u90e8\uff0c\u753b\u5f97\u4e0d\u597d\u7684\u8138\u90e8\uff0c\u7578\u5f62\u7684\uff0c\u6bc1\u5bb9\u7684\uff0c\u5f62\u6001\u7578\u5f62\u7684\u80a2\u4f53\uff0c\u624b\u6307\u878d\u5408\uff0c\u9759\u6b62\u4e0d\u52a8\u7684\u753b\u9762\uff0c\u6742\u4e71\u7684\u80cc\u666f\uff0c\u4e09\u6761\u817f\uff0c\u80cc\u666f\u4eba\u5f88\u591a\uff0c\u5012\u7740\u8d70, censored, mosaic censoring, bar censor, pixelated, glowing, bloom, blurry, day, out of focus, low detail, bad anatomy, ugly, overexposed, underexposed, distorted face, extra limbs, cartoonish, 3d render artifacts, duplicate people, unnatural lighting, bad composition, missing shadows, low resolution, poorly textured, glitch, noise, grain, static, motionless, still frame, overall grayish, worst quality, low quality, JPEG compression artifacts, subtitles, stylized, artwork, painting, illustration, cluttered background, many people in background, three legs, walking backward, zoom out, zoom in, mouth speaking, moving mouth, talking, speaking, mute speaking, unnatural skin tone, discolored eyelid, red eyelids, red upper eyelids, no red eyeshadow, closed eyes, no wide-open innocent eyes, poorly drawn hands, extra fingers, fused fingers, poorly drawn face, deformed, disfigured, malformed limbs, thighs, fog, mist, voluminous eyelashes, blush, disappearing, floating, breaking, splitting, duplicated, fragmented, glitchy"
       ],
       "color": "#322",
       "bgcolor": "#533",
@@ -3954,7 +3835,7 @@
         }
       },
       "widgets_values": [
-        "*整体场景*：夏日午后，日式民居的客厅里，男孩独自在屋内，被电视内容吸引，电视全程在播放皮卡丘和杰尼龟互相打招呼的画面，窗外庭院花草、晾衣彩衣在风中轻动，整体呈现吉卜力式的治愈写实风格，暖黄色调，采用固定镜头，构图平衡，光线柔和且有光斑流动，营造慵懒静谧的时间段氛围。\n**镜头**\n*整体场景*：夏日午后，日式民居客厅，暖黄色柔光，固定镜头，吉卜力治愈写实风格，中心构图，低饱和度暖色调。男孩专注看电视时，连贯完成拿起桌上完整西瓜块、咬食、放回原位的动作，窗外晾衣彩衣与橘树枝叶轻晃，全程无物体异常变化，氛围慵懒自然。\n*5秒拆解*：第1秒，男孩目光暂离电视，右手平稳伸向茶几上的完整西瓜块；第2秒，指尖握住西瓜块，缓缓拿起，西瓜形态完整，果肉鲜红在暖光下清晰可见；第3秒，将西瓜凑近嘴边咬下一口，咀嚼时左手轻扶茶几，西瓜仍保持完整块状；第4秒，咀嚼间隙，缓缓将咬过的西瓜块放回茶几原位，位置与拿起前一致，但是缺了一块；第5秒，手收回身侧，目光重回电视，桌上西瓜静静摆放，窗外轻动与屋内静谧呼应，维持治愈氛围。"
+        "*\u6574\u4f53\u573a\u666f*\uff1a\u590f\u65e5\u5348\u540e\uff0c\u65e5\u5f0f\u6c11\u5c45\u7684\u5ba2\u5385\u91cc\uff0c\u7537\u5b69\u72ec\u81ea\u5728\u5c4b\u5185\uff0c\u88ab\u7535\u89c6\u5185\u5bb9\u5438\u5f15\uff0c\u7535\u89c6\u5168\u7a0b\u5728\u64ad\u653e\u76ae\u5361\u4e18\u548c\u6770\u5c3c\u9f9f\u4e92\u76f8\u6253\u62db\u547c\u7684\u753b\u9762\uff0c\u7a97\u5916\u5ead\u9662\u82b1\u8349\u3001\u667e\u8863\u5f69\u8863\u5728\u98ce\u4e2d\u8f7b\u52a8\uff0c\u6574\u4f53\u5448\u73b0\u5409\u535c\u529b\u5f0f\u7684\u6cbb\u6108\u5199\u5b9e\u98ce\u683c\uff0c\u6696\u9ec4\u8272\u8c03\uff0c\u91c7\u7528\u56fa\u5b9a\u955c\u5934\uff0c\u6784\u56fe\u5e73\u8861\uff0c\u5149\u7ebf\u67d4\u548c\u4e14\u6709\u5149\u6591\u6d41\u52a8\uff0c\u8425\u9020\u6175\u61d2\u9759\u8c27\u7684\u65f6\u95f4\u6bb5\u6c1b\u56f4\u3002\n**\u955c\u5934**\n*\u6574\u4f53\u573a\u666f*\uff1a\u590f\u65e5\u5348\u540e\uff0c\u65e5\u5f0f\u6c11\u5c45\u5ba2\u5385\uff0c\u6696\u9ec4\u8272\u67d4\u5149\uff0c\u56fa\u5b9a\u955c\u5934\uff0c\u5409\u535c\u529b\u6cbb\u6108\u5199\u5b9e\u98ce\u683c\uff0c\u4e2d\u5fc3\u6784\u56fe\uff0c\u4f4e\u9971\u548c\u5ea6\u6696\u8272\u8c03\u3002\u7537\u5b69\u4e13\u6ce8\u770b\u7535\u89c6\u65f6\uff0c\u8fde\u8d2f\u5b8c\u6210\u62ff\u8d77\u684c\u4e0a\u5b8c\u6574\u897f\u74dc\u5757\u3001\u54ac\u98df\u3001\u653e\u56de\u539f\u4f4d\u7684\u52a8\u4f5c\uff0c\u7a97\u5916\u667e\u8863\u5f69\u8863\u4e0e\u6a58\u6811\u679d\u53f6\u8f7b\u6643\uff0c\u5168\u7a0b\u65e0\u7269\u4f53\u5f02\u5e38\u53d8\u5316\uff0c\u6c1b\u56f4\u6175\u61d2\u81ea\u7136\u3002\n*5\u79d2\u62c6\u89e3*\uff1a\u7b2c1\u79d2\uff0c\u7537\u5b69\u76ee\u5149\u6682\u79bb\u7535\u89c6\uff0c\u53f3\u624b\u5e73\u7a33\u4f38\u5411\u8336\u51e0\u4e0a\u7684\u5b8c\u6574\u897f\u74dc\u5757\uff1b\u7b2c2\u79d2\uff0c\u6307\u5c16\u63e1\u4f4f\u897f\u74dc\u5757\uff0c\u7f13\u7f13\u62ff\u8d77\uff0c\u897f\u74dc\u5f62\u6001\u5b8c\u6574\uff0c\u679c\u8089\u9c9c\u7ea2\u5728\u6696\u5149\u4e0b\u6e05\u6670\u53ef\u89c1\uff1b\u7b2c3\u79d2\uff0c\u5c06\u897f\u74dc\u51d1\u8fd1\u5634\u8fb9\u54ac\u4e0b\u4e00\u53e3\uff0c\u5480\u56bc\u65f6\u5de6\u624b\u8f7b\u6276\u8336\u51e0\uff0c\u897f\u74dc\u4ecd\u4fdd\u6301\u5b8c\u6574\u5757\u72b6\uff1b\u7b2c4\u79d2\uff0c\u5480\u56bc\u95f4\u9699\uff0c\u7f13\u7f13\u5c06\u54ac\u8fc7\u7684\u897f\u74dc\u5757\u653e\u56de\u8336\u51e0\u539f\u4f4d\uff0c\u4f4d\u7f6e\u4e0e\u62ff\u8d77\u524d\u4e00\u81f4\uff0c\u4f46\u662f\u7f3a\u4e86\u4e00\u5757\uff1b\u7b2c5\u79d2\uff0c\u624b\u6536\u56de\u8eab\u4fa7\uff0c\u76ee\u5149\u91cd\u56de\u7535\u89c6\uff0c\u684c\u4e0a\u897f\u74dc\u9759\u9759\u6446\u653e\uff0c\u7a97\u5916\u8f7b\u52a8\u4e0e\u5c4b\u5185\u9759\u8c27\u547c\u5e94\uff0c\u7ef4\u6301\u6cbb\u6108\u6c1b\u56f4\u3002"
       ],
       "color": "#232",
       "bgcolor": "#353",
@@ -4735,7 +4616,7 @@
   "groups": [
     {
       "id": 1,
-      "title": "图生视频",
+      "title": "\u56fe\u751f\u89c6\u9891",
       "bounding": [
         836.005859375,
         1405.3265380859375,
@@ -4748,7 +4629,7 @@
     },
     {
       "id": 2,
-      "title": "加速",
+      "title": "\u52a0\u901f",
       "bounding": [
         3768.4951171875,
         1721.1473388671875,
@@ -4761,7 +4642,7 @@
     },
     {
       "id": 3,
-      "title": "B站/YouTube:Work-Fisher",
+      "title": "B\u7ad9/YouTube:Work-Fisher",
       "bounding": [
         3025.90869140625,
         409.6732177734375,

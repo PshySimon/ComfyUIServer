@@ -260,7 +260,14 @@ class ComfyUIInstaller:
         if target_dir.exists():
             self.log(f"[yellow]{name} exists, pulling updates...[/yellow]")
             result = self.run_command(["git", "pull"], cwd=target_dir, capture=True)
-            return result.returncode == 0
+            if result.returncode == 0:
+                self.log(f"[green]✓ {name} updated successfully[/green]")
+                return True
+            else:
+                error_msg = result.stderr or result.stdout or "Unknown error"
+                self.log(f"[red]✗ Failed to update {name}: {error_msg[:200]}[/red]")
+                self.log(f"[yellow]⚠ Using existing {name} version (may be outdated)[/yellow]")
+                return True  # Don't fail the installation, just warn
         else:
             self.log(f"[green]Cloning {name}...[/green]")
             result = self.run_command(["git", "clone", repo_url, str(target_dir)], capture=True)

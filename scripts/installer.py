@@ -565,15 +565,17 @@ class ComfyUIInstaller:
                 self.log(f"[dim]DEBUG: Node map successfully parsed, {len(data)} repositories[/dim]", to_file_only=True)
                 return data
         except urllib.error.URLError as e:
-            self.log(f"[yellow]Failed to download node map: Network error - {e}[/yellow]")
+            self.log(f"[red]✗ Failed to download node map: Network error[/red]")
+            self.log(f"[yellow]  Reason: {e.reason if hasattr(e, 'reason') else str(e)}[/yellow]")
             self.log(f"[dim]DEBUG: URLError details: {e}[/dim]", to_file_only=True)
             return {}
         except json.JSONDecodeError as e:
-            self.log(f"[yellow]Failed to parse node map: JSON decode error - {e}[/yellow]")
+            self.log(f"[red]✗ Failed to parse node map: Invalid JSON[/red]")
             self.log(f"[dim]DEBUG: JSONDecodeError details: {e}[/dim]", to_file_only=True)
             return {}
         except Exception as e:
-            self.log(f"[yellow]Failed to download node map: {e}[/yellow]")
+            self.log(f"[red]✗ Failed to download node map: {type(e).__name__}[/red]")
+            self.log(f"[yellow]  Error: {str(e)}[/yellow]")
             self.log(f"[dim]DEBUG: Exception type: {type(e).__name__}, details: {e}[/dim]", to_file_only=True)
             return {}
     
@@ -697,8 +699,11 @@ class ComfyUIInstaller:
                         'stars': item.get('stargazers_count', 0)
                     })
                 return candidates
+        except urllib.error.URLError as e:
+            self.log(f"[yellow]  GitHub search failed: Network error ({e.reason if hasattr(e, 'reason') else str(e)})[/yellow]")
+            return []
         except Exception as e:
-            self.log(f"[yellow]GitHub search failed: {e}[/yellow]")
+            self.log(f"[yellow]  GitHub search failed: {type(e).__name__} - {str(e)}[/yellow]")
             return []
     
     def scan_local_nodes_for_type(self, node_type: str) -> Optional[str]:
@@ -862,6 +867,7 @@ class ComfyUIInstaller:
         if node_map:
             self.log(f"[dim]DEBUG: Node map downloaded successfully, contains {len(node_map)} repos[/dim]", to_file_only=True)
         else:
+            self.log(f"[yellow]⚠ Node map download failed - node resolution may be limited[/yellow]")
             self.log(f"[dim]DEBUG: WARNING - Node map download failed or empty![/dim]", to_file_only=True)
 
         # Build package scores from ALL workflow nodes for context-based voting
@@ -922,10 +928,13 @@ class ComfyUIInstaller:
                     official_repos.add(best_repo)
             else:
                 # No repo found in official map - fallback to GitHub search
+                self.log(f"[yellow]⚠ '{node_type}' not in node map, searching GitHub...[/yellow]")
                 self.log(f"[dim]DEBUG: '{node_type}' NOT found in node map, trying GitHub search[/dim]", to_file_only=True)
                 candidates = self.search_github_for_node(node_type)
                 self.log(f"[dim]DEBUG: GitHub search returned {len(candidates)} candidate(s)[/dim]", to_file_only=True)
+
                 if candidates:
+                    self.log(f"[cyan]  → Found {len(candidates)} GitHub candidates[/cyan]")
                     # Check if any candidate is already installed
                     installed_candidate = None
                     for c in candidates:
@@ -942,7 +951,7 @@ class ComfyUIInstaller:
                         self.log(f"[dim]DEBUG: GitHub candidates: {[c['name'] for c in candidates]}[/dim]", to_file_only=True)
                         github_candidates[node_type] = candidates
                 else:
-                    self.log(f"[red]✗ No match found for {node_type}[/red]")
+                    self.log(f"[red]✗ '{node_type}' - No matches in node map or GitHub[/red]")
                     self.log(f"[dim]DEBUG: '{node_type}' - No matches in node map or GitHub, marked as unknown[/dim]", to_file_only=True)
                     still_unknown.append(node_type)
 

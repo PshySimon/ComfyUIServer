@@ -889,6 +889,7 @@ class ModelDownloader:
             "--summary-interval=1",
             "--console-log-level=notice",
             "--download-result=hide",
+            "--check-certificate=false",    # Disable SSL certificate verification for proxy environments
             model.url
         ]
         

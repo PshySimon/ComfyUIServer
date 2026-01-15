@@ -114,10 +114,12 @@ class ModelDownloader:
         self._manager_models: Optional[List] = None
         
     def log(self, message: str):
-        """Add a log message"""
+        """Add a log message and print it"""
         self.logs.append(message)
         if len(self.logs) > 30:
             self.logs = self.logs[-30:]
+        # Actually print the message to console
+        self.console.print(message)
     
     def ensure_aria2(self) -> bool:
         """Ensure aria2 is installed"""

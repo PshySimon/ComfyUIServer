@@ -347,8 +347,8 @@ class ComfyUIInstaller:
             capture=True
         )
 
-        # 安装完成后立即修复 NumPy 版本
-        self.fix_numpy_version()
+        # Let pip handle numpy version conflicts via requirements.txt
+        # Removed forced numpy fix to prevent version ping-pong
 
         return result.returncode == 0
 
@@ -401,8 +401,8 @@ class ComfyUIInstaller:
                 os.environ.clear()
                 os.environ.update(original_env)
 
-        # 安装完成后立即修复 NumPy 版本
-        self.fix_numpy_version()
+        # Let pip handle numpy version - requirements.txt has constraints
+        # Removed forced fix to avoid breaking custom node dependencies
 
         return result.returncode == 0
     
@@ -536,8 +536,8 @@ class ComfyUIInstaller:
 
         if result.returncode == 0:
             self.installed_nodes.append(node_name)
-            # 每次安装完插件后都检查并修复 NumPy 版本
-            self.fix_numpy_version()
+            # Let pip handle numpy version via requirements.txt constraints
+            # Removed forced numpy downgrade to avoid version conflicts
             return True
         else:
             error = result.stderr or result.stdout or "Unknown error"

@@ -5,6 +5,7 @@ pyyaml>=6.0
 torch>=2.0.0
 numpy>=1.25.0,<2.0.0
 Pillow>=10.0.0
+python-multipart
 typer
 GitPython
 toml

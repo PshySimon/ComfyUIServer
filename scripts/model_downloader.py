@@ -126,35 +126,61 @@ class ModelDownloader:
         if shutil.which("aria2c"):
             self.log("[green]✓ aria2c found[/green]")
             return True
-        
+
         self.log("[yellow]Installing aria2...[/yellow]")
-        try:
-            # Try apt-get (Ubuntu/Debian)
-            result = subprocess.run(
-                ["sudo", "apt-get", "install", "-y", "aria2"],
-                capture_output=True,
-                text=True,
-                timeout=120
-            )
-            if result.returncode == 0:
-                self.log("[green]✓ aria2 installed successfully[/green]")
-                return True
-            
-            # If sudo fails, try without sudo (for some environments)
-            result = subprocess.run(
-                ["apt-get", "install", "-y", "aria2"],
-                capture_output=True,
-                text=True,
-                timeout=120
-            )
-            if result.returncode == 0:
-                self.log("[green]✓ aria2 installed successfully[/green]")
-                return True
-                
-        except Exception as e:
-            self.log(f"[red]Failed to install aria2: {e}[/red]")
-        
-        self.log("[red]✗ Could not install aria2. Please install manually: sudo apt-get install aria2[/red]")
+
+        # Try conda first (common in cloud environments)
+        if shutil.which("conda"):
+            try:
+                self.log("[dim]Trying conda install...[/dim]")
+                result = subprocess.run(
+                    ["conda", "install", "-y", "-c", "conda-forge", "aria2"],
+                    capture_output=True,
+                    text=True,
+                    timeout=180
+                )
+                if result.returncode == 0 and shutil.which("aria2c"):
+                    self.log("[green]✓ aria2 installed via conda[/green]")
+                    return True
+            except Exception as e:
+                self.log(f"[dim]conda install failed: {e}[/dim]")
+
+        # Try apt-get with sudo
+        if shutil.which("sudo") and shutil.which("apt-get"):
+            try:
+                self.log("[dim]Trying sudo apt-get...[/dim]")
+                result = subprocess.run(
+                    ["sudo", "apt-get", "install", "-y", "aria2"],
+                    capture_output=True,
+                    text=True,
+                    timeout=120
+                )
+                if result.returncode == 0 and shutil.which("aria2c"):
+                    self.log("[green]✓ aria2 installed via apt-get[/green]")
+                    return True
+            except Exception as e:
+                self.log(f"[dim]sudo apt-get failed: {e}[/dim]")
+
+        # Try apt-get without sudo (rootless containers)
+        if shutil.which("apt-get"):
+            try:
+                self.log("[dim]Trying apt-get without sudo...[/dim]")
+                result = subprocess.run(
+                    ["apt-get", "install", "-y", "aria2"],
+                    capture_output=True,
+                    text=True,
+                    timeout=120
+                )
+                if result.returncode == 0 and shutil.which("aria2c"):
+                    self.log("[green]✓ aria2 installed via apt-get[/green]")
+                    return True
+            except Exception as e:
+                self.log(f"[dim]apt-get failed: {e}[/dim]")
+
+        self.log("[red]✗ Could not install aria2 automatically[/red]")
+        self.log("[yellow]Please install manually:[/yellow]")
+        self.log("[dim]  - conda: conda install -c conda-forge aria2[/dim]")
+        self.log("[dim]  - apt: sudo apt-get install aria2[/dim]")
         return False
     
     def load_popular_models(self) -> Dict:

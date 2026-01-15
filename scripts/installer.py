@@ -837,11 +837,11 @@ class ComfyUIInstaller:
                 
             except Exception as e:
                 self.log(f"[red]✗ Runtime check failed: {e}[/red]")
-                self.log(f"[yellow]  Cannot verify which nodes are loaded - assuming all workflow nodes are missing[/yellow]")
+                self.log(f"[yellow]  Cannot verify which nodes are loaded - skipping runtime verification[/yellow]")
                 import traceback
                 traceback.print_exc()
-                # Return all workflow nodes as missing since we can't verify
-                return list(workflow_nodes)
+                # Return None to signal that runtime check failed and should be skipped
+                return None
             
         finally:
             # Restore original state
@@ -1226,8 +1226,12 @@ class ComfyUIInstaller:
                 live.update(self.make_layout(progress))
 
                 runtime_missing = self.detect_missing_nodes_runtime()
-                self.log(f"[dim]DEBUG: Runtime detection returned {len(runtime_missing) if runtime_missing else 0} missing nodes[/dim]", to_file_only=True)
-                if runtime_missing:
+                self.log(f"[dim]DEBUG: Runtime detection returned {len(runtime_missing) if runtime_missing is not None else 'None (check failed)'} missing nodes[/dim]", to_file_only=True)
+                if runtime_missing is None:
+                    # Runtime check failed - skip this phase and continue to model download
+                    self.log(f"[yellow]Skipping runtime verification due to check failure - proceeding to model download[/yellow]")
+                    live.update(self.make_layout(progress))
+                elif runtime_missing:
                     self.log(f"[dim]DEBUG: Runtime missing nodes list: {runtime_missing}[/dim]", to_file_only=True)
 
                     # Check which missing nodes were supposed to be installed

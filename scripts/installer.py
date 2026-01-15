@@ -836,10 +836,12 @@ class ComfyUIInstaller:
                 return list(missing)
                 
             except Exception as e:
-                self.log(f"[yellow]Runtime check failed: {e}[/yellow]")
+                self.log(f"[red]✗ Runtime check failed: {e}[/red]")
+                self.log(f"[yellow]  Cannot verify which nodes are loaded - assuming all workflow nodes are missing[/yellow]")
                 import traceback
                 traceback.print_exc()
-                return []
+                # Return all workflow nodes as missing since we can't verify
+                return list(workflow_nodes)
             
         finally:
             # Restore original state

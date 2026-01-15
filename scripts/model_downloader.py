@@ -18,7 +18,6 @@ import threading
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple
 from dataclasses import dataclass
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
     from rich.console import Console
@@ -1052,61 +1051,37 @@ class ModelDownloader:
         from rich.status import Status
         
         self.console.print(f"\n[cyan]Checking {len(models_to_process)} models...[/cyan]\n")
-
-        # Use ThreadPoolExecutor for concurrent model checking (4 workers for HuggingFace API)
-        def check_single_model(name_category):
-            name, category = name_category
-            # Check if already installed
-            if name in local_models:
-                return ('skip', name, None)
-
-            # Find model URL
-            info = self.find_model_url(name, expected_category=category, status_callback=lambda msg: None)
-            if info:
-                # Get file size
-                file_size = self.get_file_size_from_url(info.url)
-                info.size = file_size
-                return ('found', name, info)
-            else:
-                return ('not_found', name, None)
-
-        with Status("[bold cyan]Searching for model URLs (4 concurrent threads)...", console=self.console, spinner="dots") as status:
+        
+        with Status("[bold cyan]Searching for model URLs...", console=self.console, spinner="dots") as status:
             if isinstance(models_to_process, list):
                 # Convert list to dict with None categories
                 models_to_process = {m: None for m in models_to_process}
-
-            # Use ThreadPoolExecutor with 4 workers
-            completed = 0
-            total = len(models_to_process)
-
-            with ThreadPoolExecutor(max_workers=4) as executor:
-                # Submit all tasks
-                future_to_model = {
-                    executor.submit(check_single_model, (name, category)): name
-                    for name, category in models_to_process.items()
-                }
-
-                # Process results as they complete
-                for future in as_completed(future_to_model):
-                    completed += 1
-                    status.update(f"[bold cyan]Checking models {completed}/{total}...")
-
-                    result_type, name, info = future.result()
-
-                    if result_type == 'skip':
-                        self.console.print(f"  [green]✓[/green] {name} [dim](installed)[/dim]")
-                        skipped.append(name)
-                    elif result_type == 'found':
-                        if info.size:
-                            total_download_size += info.size
-                            size_str = self.format_size(info.size)
-                            self.console.print(f"  [yellow]↓[/yellow] {name} [dim]-> {info.directory}/ ({size_str})[/dim]")
-                        else:
-                            self.console.print(f"  [yellow]↓[/yellow] {name} [dim]-> {info.directory}/ (size unknown)[/dim]")
-                        models_to_download.append(info)
-                    else:  # not_found
-                        self.console.print(f"  [red]?[/red] {name} [dim](not found)[/dim]")
-                        not_found.append(name)
+                
+            for i, (name, category) in enumerate(models_to_process.items(), 1):
+                status.update(f"[bold cyan]Checking model {i}/{len(models_to_process)}: {name[:40]}...")
+                
+                # If we have a category, check if it exists in that specific category
+                # But our get_local_models returns a flat set, so we check general existence first
+                if name in local_models:
+                    self.console.print(f"  [green]✓[/green] {name} [dim](installed)[/dim]")
+                    skipped.append(name)
+                    continue
+                
+                info = self.find_model_url(name, expected_category=category, status_callback=status.update)
+                if info:
+                    # 获取文件大小
+                    file_size = self.get_file_size_from_url(info.url)
+                    info.size = file_size
+                    if file_size:
+                        total_download_size += file_size
+                        size_str = self.format_size(file_size)
+                        self.console.print(f"  [yellow]↓[/yellow] {name} [dim]-> {info.directory}/ ({size_str})[/dim]")
+                    else:
+                        self.console.print(f"  [yellow]↓[/yellow] {name} [dim]-> {info.directory}/ (size unknown)[/dim]")
+                    models_to_download.append(info)
+                else:
+                    self.console.print(f"  [red]?[/red] {name} [dim](not found)[/dim]")
+                    not_found.append(name)
         
         if not models_to_download:
             self.console.print("\n[green]All models are already installed![/green]")

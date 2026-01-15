@@ -1308,9 +1308,9 @@ class ComfyUIInstaller:
                             # Check for requirements.txt and reinstall
                             req_file = repo_path / "requirements.txt"
                             if req_file.exists():
-                                self.log(f"[dim]DEBUG: Found requirements.txt, reinstalling...[/dim]", to_file_only=True)
+                                self.log(f"[dim]DEBUG: Found requirements.txt, installing missing deps...[/dim]", to_file_only=True)
                                 result = self.run_command(
-                                    [sys.executable, "-m", "pip", "install", "-r", str(req_file), "--force-reinstall"],
+                                    [sys.executable, "-m", "pip", "install", "-r", str(req_file)],
                                     cwd=repo_path,
                                     capture=True
                                 )

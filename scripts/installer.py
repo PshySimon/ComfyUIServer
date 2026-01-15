@@ -1624,24 +1624,32 @@ def main():
         # After installation, download models if requested
         # Note: Download models even if some nodes failed - user may want to manually fix node issues later
         # DEBUG: Log the conditions
+        print(f"DEBUG: download_models={download_models}, workflow_file={workflow_file}")
         installer.log(f"[dim]DEBUG: Checking model download conditions - success={success}, download_models={download_models}, workflow_file={workflow_file is not None}[/dim]", to_file_only=True)
         if download_models and workflow_file:
+            print("DEBUG: Entering model download block")
             console.print("\n")
             console.print(Panel("[bold cyan]Starting Model Download[/bold cyan]", expand=False))
-            
-            from model_downloader import ModelDownloader
-            downloader = ModelDownloader(
-                comfyui_dir=install_dir / "ComfyUI",
-                workflow_file=workflow_file
-            )
-            downloaded, skipped, failed = downloader.run()
-            
-            if failed:
-                success = False
-            
-            # Show node installation summary again after model download
-            console.print("\n")
-            installer.show_summary()
+
+            try:
+                from model_downloader import ModelDownloader
+                downloader = ModelDownloader(
+                    comfyui_dir=install_dir / "ComfyUI",
+                    workflow_file=workflow_file
+                )
+                downloaded, skipped, failed = downloader.run()
+
+                if failed:
+                    success = False
+
+                # Show node installation summary again after model download
+                console.print("\n")
+                installer.show_summary()
+            except Exception as e:
+                print(f"DEBUG: Model download failed with exception: {e}")
+                import traceback
+                traceback.print_exc()
+                raise
     
     sys.exit(0 if success else 1)
 

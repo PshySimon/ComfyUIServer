@@ -548,11 +548,17 @@ class ComfyUIInstaller:
         self.log("[dim]Downloading official node map...[/dim]")
         self.log(f"[dim]DEBUG: Downloading from {self.NODE_MAP_URL}[/dim]", to_file_only=True)
         try:
+            # Create SSL context that bypasses certificate verification
+            # (needed for cloud environments with proxy/firewall)
+            context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+
             req = urllib.request.Request(
                 self.NODE_MAP_URL,
                 headers={'User-Agent': 'ComfyUI-Installer/1.0'}
             )
-            with urllib.request.urlopen(req, timeout=30) as response:
+            with urllib.request.urlopen(req, timeout=60, context=context) as response:
                 self.log(f"[dim]DEBUG: HTTP response code: {response.status}[/dim]", to_file_only=True)
                 data = json.loads(response.read().decode('utf-8'))
                 self.log(f"[green]Loaded {len(data)} repos from node map[/green]")
@@ -665,6 +671,12 @@ class ComfyUIInstaller:
         """Search GitHub for repos that might contain this node type. Returns list of candidates."""
         self.log(f"[dim]Searching GitHub for {node_type}...[/dim]")
         try:
+            # Create SSL context that bypasses certificate verification
+            # (needed for cloud environments with proxy/firewall)
+            context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+
             query = f"ComfyUI {node_type} in:name,readme,description"
             url = f"https://api.github.com/search/repositories?q={urllib.parse.quote(query)}&per_page=5"
             req = urllib.request.Request(
@@ -674,7 +686,7 @@ class ComfyUIInstaller:
                     'Accept': 'application/vnd.github.v3+json'
                 }
             )
-            with urllib.request.urlopen(req, timeout=15) as response:
+            with urllib.request.urlopen(req, timeout=15, context=context) as response:
                 data = json.loads(response.read().decode('utf-8'))
                 candidates = []
                 for item in data.get('items', [])[:5]:

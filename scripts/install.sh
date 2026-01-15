@@ -13,19 +13,47 @@ if ! command -v python &> /dev/null; then
     exit 1
 fi
 
-# Check for proxy environment and suggest configuration
+# Function to configure proxy settings
+configure_proxy() {
+    echo ""
+    echo "Configuring proxy settings..."
+    echo ""
+
+    # Configure pip
+    pip config set global.timeout 60 2>/dev/null
+    pip config set global.retries 5 2>/dev/null
+    echo "✓ pip timeout and retries configured"
+
+    # Configure git
+    if [ -n "$http_proxy" ]; then
+        git config --global http.proxy "$http_proxy" 2>/dev/null
+        echo "✓ git http.proxy configured"
+    fi
+    if [ -n "$https_proxy" ]; then
+        git config --global https.proxy "$https_proxy" 2>/dev/null
+        echo "✓ git https.proxy configured"
+    fi
+
+    echo ""
+    echo "Proxy configuration complete!"
+    echo "Note: SSL certificate issues will be handled automatically by the installer."
+    echo ""
+}
+
+# Check for proxy environment and offer to configure
 if [ -n "$http_proxy" ] || [ -n "$https_proxy" ] || [ -n "$HTTP_PROXY" ] || [ -n "$HTTPS_PROXY" ]; then
     echo "========================================"
     echo "Proxy environment detected!"
     echo "========================================"
     echo ""
-    echo "To avoid SSL errors during installation, we recommend running:"
-    echo "  bash scripts/setup_proxy.sh"
-    echo ""
-    echo "This will configure pip and git to work properly with your proxy."
+    echo "Detected proxy settings:"
+    [ -n "$http_proxy" ] && echo "  http_proxy=$http_proxy"
+    [ -n "$https_proxy" ] && echo "  https_proxy=$https_proxy"
+    [ -n "$HTTP_PROXY" ] && echo "  HTTP_PROXY=$HTTP_PROXY"
+    [ -n "$HTTPS_PROXY" ] && echo "  HTTPS_PROXY=$HTTPS_PROXY"
     echo ""
 
-    # Check if pip and git are already configured
+    # Check if already configured
     pip_configured=false
     git_configured=false
 
@@ -38,13 +66,25 @@ if [ -n "$http_proxy" ] || [ -n "$https_proxy" ] || [ -n "$HTTP_PROXY" ] || [ -n
     fi
 
     if [ "$pip_configured" = true ] && [ "$git_configured" = true ]; then
-        echo "✓ Proxy configuration detected. Proceeding with installation..."
+        echo "✓ Proxy already configured. Proceeding with installation..."
+        echo ""
     else
-        echo "⚠ Proxy configuration not complete. Press Ctrl+C to cancel and run setup_proxy.sh first,"
-        echo "  or press Enter to continue anyway (may encounter SSL errors)..."
-        read -r
+        echo "Would you like to configure proxy settings now? (recommended)"
+        echo "This will set pip timeout/retries and git proxy settings."
+        echo ""
+        read -p "Configure proxy? [Y/n]: " response
+        response=${response:-Y}  # Default to Y if user just presses Enter
+
+        if [[ "$response" =~ ^[Yy]$ ]]; then
+            configure_proxy
+        else
+            echo ""
+            echo "Skipping proxy configuration."
+            echo "Note: You may encounter SSL errors during installation."
+            echo "You can run 'bash scripts/setup_proxy.sh' later if needed."
+            echo ""
+        fi
     fi
-    echo ""
 fi
 
 # Install rich if not available

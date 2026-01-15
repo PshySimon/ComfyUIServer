@@ -900,6 +900,7 @@ class ModelDownloader:
         # aria2c command with optimized settings for cloud environment
         cmd = [
             "aria2c",
+            "--no-proxy",                    # CRITICAL: Bypass proxy for direct connection (fixes SSL handshake)
             "--check-certificate=false",     # Disable SSL certificate verification
             "--allow-overwrite=true",        # Allow overwriting existing files
             "-d", str(target_dir),

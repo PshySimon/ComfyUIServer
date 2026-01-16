@@ -1703,7 +1703,31 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
         # 应用用户参数到工作流
         print(f"[DEBUG] processed_params keys: {list(processed_params.keys())}")
         print(f"[DEBUG] processed_params: {processed_params}")
-        
+
+        # 检查工作流中是否使用了 KJ nodes Sage Attention 加速
+        has_sage_attention = False
+        sage_attention_nodes = []
+        for node_id, node_data in workflow_data.items():
+            if node_data.get("class_type") == "PathchSageAttentionKJ":
+                inputs = node_data.get("inputs", {})
+                sage_mode = inputs.get("sage_attention", "disabled")
+                has_sage_attention = True
+                sage_attention_nodes.append({
+                    "node_id": node_id,
+                    "mode": sage_mode,
+                    "title": node_data.get("_meta", {}).get("title", "Sage Attention")
+                })
+
+        if has_sage_attention:
+            print("=" * 80)
+            print(f"[KJ Nodes] 检测到 {len(sage_attention_nodes)} 个 Sage Attention 节点:")
+            for node_info in sage_attention_nodes:
+                status = "✓ ENABLED" if node_info["mode"] != "disabled" else "✗ DISABLED"
+                print(f"  - Node {node_info['node_id']} ({node_info['title']}): {status} (mode={node_info['mode']})")
+            print("=" * 80)
+        else:
+            print("[KJ Nodes] 工作流中未使用 Sage Attention 加速")
+
         # 先打印所有 LoadImage 节点的信息
         for node_id, node_data in workflow_data.items():
             if node_data.get("class_type") == "LoadImage":

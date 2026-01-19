@@ -36,7 +36,7 @@ def load_config():
             'cpu': 4,
             'memory': 16384
         },
-        'image': {'base': 'pytorch/pytorch:2.7.1-cuda13.0-cudnn9-runtime'},
+        'image': {'base': 'pytorch/pytorch:2.9.1-cuda13.0-cudnn9-runtime'},
         'volumes': {
             'models': 'comfyui-models',
             'custom_nodes': 'comfyui-custom-nodes',

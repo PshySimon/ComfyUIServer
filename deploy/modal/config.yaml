@@ -10,7 +10,7 @@ hardware:
 
 # 基础镜像
 image:
-  base: "pytorch/pytorch:2.7.1-cuda13.0-cudnn9-runtime"  # PyTorch 2.7.1+ with CUDA 13.0+ (comfyui-kjnodes 需要)
+  base: "pytorch/pytorch:2.9.1-cuda13.0-cudnn9-runtime"  # PyTorch 2.9.1 with CUDA 13.0 (comfyui-kjnodes 需要 2.7.1+)
   python_version: "3.11"
 
 # Modal 配置

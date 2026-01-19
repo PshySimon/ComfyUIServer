@@ -1,8 +1,11 @@
 #!/bin/bash
 
 # 测试脚本：图生视频接口
-# Base URL - 本地测试默认使用 6006 端口（与 run.sh 保持一致）
-BASE_URL="${BASE_URL:-http://localhost:6006}"
+# Base URL - 优先使用环境变量，默认使用 Modal 部署地址
+# 使用方法:
+#   1. Modal 部署 (默认): ./test_image2video.sh
+#   2. 本地测试: BASE_URL=http://localhost:6006 ./test_image2video.sh
+BASE_URL="${BASE_URL:-https://pshysimon--comfyui-server-serve.modal.run}"
 
 # 图片文件
 IMAGE_FILE="橘猫.jpg"

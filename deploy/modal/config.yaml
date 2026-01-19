@@ -1,0 +1,43 @@
+# Modal 部署配置
+
+# 硬件配置
+hardware:
+  gpu: "A100"  # 可选: A10, A100, H100, L4, L40S
+  gpu_size: "80GB"  # A100 可选: 40GB 或 80GB
+  gpu_count: 1
+  cpu: 4
+  memory: 16384  # MB
+
+# 基础镜像
+image:
+  base: "pytorch/pytorch:2.7.1-cuda13.0-cudnn9-runtime"  # PyTorch 2.7.1+ with CUDA 13.0+ (comfyui-kjnodes 需要)
+  python_version: "3.11"
+
+# Modal 配置
+modal:
+  app_name: "comfyui-server"
+  min_containers: 1  # 保持至少1个容器运行
+  timeout: 3600  # 超时时间（秒）
+  scaledown_window: 300  # 容器空闲超时（秒，原 container_idle_timeout）
+  max_concurrent_inputs: 100  # 最大并发请求数
+
+# 持久化存储卷
+volumes:
+  models: "comfyui-models"
+  custom_nodes: "comfyui-custom-nodes"
+  outputs: "comfyui-outputs"
+
+# 服务配置
+service:
+  port: 6006
+  host: "0.0.0.0"
+
+# 项目配置
+project:
+  git_url: "https://github.com/PshySimon/ComfyUIServer.git"
+  branch: "main"  # 分支名称
+
+# 安装配置（传递给 installer.py）
+installation:
+  # 要安装的工作流（可选，留空则在安装时选择）
+  workflow: "workflows/【Work-FIsh】WAN2.2-RemixV2-I2V图生视频.json"

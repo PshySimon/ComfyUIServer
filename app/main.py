@@ -806,7 +806,8 @@ async def initialize_comfyui():
     try:
         # 切换到 ComfyUI 目录
         os.chdir(comfyui_path)
-        sys.argv = [sys.argv[0]]
+        # 添加 --highvram 参数让模型常驻显存（80G A100 足够）
+        sys.argv = [sys.argv[0], "--highvram"]
         
         # 重置 sys.path，确保 ComfyUI 路径优先
         # 只保留标准库和 site-packages，然后把 ComfyUI 放最前面

@@ -281,7 +281,10 @@ def serve():
 
         print(f"Step 1/2: Installing ComfyUI and dependencies...")
         print(f"Running: {' '.join(cmd_install)}")
-        result = subprocess.run(cmd_install, capture_output=False, text=True)
+        # 强制禁用 Rich 的交互式界面，确保日志输出
+        install_env = os.environ.copy()
+        install_env['TERM'] = 'dumb'  # 禁用彩色/交互式输出
+        result = subprocess.run(cmd_install, env=install_env, capture_output=False, text=True)
 
         if result.returncode != 0:
             raise RuntimeError(f"ComfyUI installation failed with code {result.returncode}")
@@ -306,7 +309,7 @@ def serve():
 
             print(f"\nStep 2/2: Downloading models...")
             print(f"Running: {' '.join(cmd_models)}")
-            result = subprocess.run(cmd_models, capture_output=False, text=True)
+            result = subprocess.run(cmd_models, env=install_env, capture_output=False, text=True)
 
             if result.returncode != 0:
                 print(f"Warning: Model download failed with code {result.returncode}")

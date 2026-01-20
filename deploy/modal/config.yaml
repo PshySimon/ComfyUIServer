@@ -5,8 +5,8 @@ hardware:
   gpu: "A100"  # 可选: A10, A100, H100, L4, L40S
   gpu_size: "80GB"  # A100 可选: 40GB 或 80GB
   gpu_count: 1
-  cpu: 4
-  memory: 16384  # MB
+  cpu: 8  # 增加到8核，视频处理需要更多CPU
+  memory: 32768  # 增加到32GB，避免内存瓶颈
 
 # 基础镜像
 image:

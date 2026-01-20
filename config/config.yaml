@@ -16,12 +16,18 @@ comfyui:
   # ComfyUI 目录路径
   # 如果不填，会自动查找当前目录下的 ComfyUI 文件夹
   directory: null
-  
+
   # 额外模型路径配置（可选）
   extra_model_paths: null
-  
+
   # 输出文件访问 URL 前缀
   base_url: "http://localhost:6006"
+
+  # 模型内存管理（控制是否将模型保留在 GPU 内存中）
+  # - highvram: 将所有模型保留在 GPU 内存中（适合 80GB+ 显存）
+  # - normalvram: 标准模式，根据需要加载/卸载模型
+  # - lowvram: 低显存模式，仅保留当前使用的模型
+  vram_mode: "highvram"
 
 # 文件目录配置
 storage:
@@ -126,11 +132,16 @@ workflows:
 
   # WAN2.2 RemixV2 图生视频工作流
   # 基于 WAN2.2 模型的图生视频，支持高质量视频生成
-  # 注意: SageAttention 默认已禁用 (widgets_values=['disabled'])，无需安装 sageattention 包
   - name: "wan22_remix_i2v"
     type: ["image-to-video"]        # 工作流类型
     path: "workflows/【Work-FIsh】WAN2.2-RemixV2-I2V图生视频.json"
     description: "WAN2.2 RemixV2 图生视频"
+    # 覆盖 workflow 中的节点配置
+    # overrides:
+    #   "1":  # 低噪声-Patch Sage Attention KJ
+    #     widgets_values: ["disabled"]
+    #   "2":  # 高噪声-Patch Sage Attention KJ
+    #     widgets_values: ["disabled"]
     inputs:
       image: "image_78"             # 输入图片（支持 base64/URL/文件名）
       positive_prompt: "text_72"    # 正向提示词

@@ -806,9 +806,24 @@ async def initialize_comfyui():
     try:
         # 切换到 ComfyUI 目录
         os.chdir(comfyui_path)
-        # 添加 --highvram 参数让模型常驻显存（80G A100 足够）
-        sys.argv = [sys.argv[0], "--highvram"]
-        
+
+        # 根据配置设置 VRAM 模式
+        vram_mode = config.get("comfyui", {}).get("vram_mode", "highvram")
+        vram_flags = {
+            "highvram": "--highvram",      # 所有模型保留在显存中
+            "normalvram": "",               # 标准模式（无参数）
+            "lowvram": "--lowvram"         # 低显存模式
+        }
+        vram_flag = vram_flags.get(vram_mode, "--highvram")
+
+        # 设置启动参数
+        if vram_flag:
+            sys.argv = [sys.argv[0], vram_flag]
+            print(f"[INFO] ComfyUI VRAM 模式: {vram_mode} ({vram_flag})")
+        else:
+            sys.argv = [sys.argv[0]]
+            print(f"[INFO] ComfyUI VRAM 模式: {vram_mode} (标准模式)")
+
         # 重置 sys.path，确保 ComfyUI 路径优先
         # 只保留标准库和 site-packages，然后把 ComfyUI 放最前面
         sys.path = [comfyui_path] + [p for p in original_path if 
@@ -831,7 +846,42 @@ async def initialize_comfyui():
         import glob
         utils_files = glob.glob(os.path.join(comfyui_path, "utils*"))
         print(f"[DEBUG] ComfyUI utils 目录内容: {utils_files}")
-        
+
+        # 测试 SageAttention 导入
+        print("=" * 60)
+        print("[SAGEATTENTION] 测试 SageAttention 导入...")
+        try:
+            import sageattention
+            print(f"[SAGEATTENTION] ✓ sageattention 导入成功")
+            print(f"[SAGEATTENTION]   版本: {getattr(sageattention, '__version__', 'unknown')}")
+            print(f"[SAGEATTENTION]   位置: {sageattention.__file__}")
+
+            # 尝试导入核心函数
+            try:
+                from sageattention import sageattn
+                print(f"[SAGEATTENTION] ✓ sageattn 函数导入成功")
+            except Exception as e:
+                print(f"[SAGEATTENTION] ✗ sageattn 函数导入失败: {e}")
+        except ImportError as e:
+            print(f"[SAGEATTENTION] ✗ sageattention 导入失败: {e}")
+            print(f"[SAGEATTENTION]   这意味着 sageattention 未正确安装")
+        except Exception as e:
+            print(f"[SAGEATTENTION] ✗ sageattention 导入异常: {e}")
+            import traceback
+            traceback.print_exc()
+
+        # 测试 PyTorch 和 CUDA 环境
+        try:
+            import torch
+            print(f"[SAGEATTENTION] PyTorch 版本: {torch.__version__}")
+            print(f"[SAGEATTENTION] CUDA 可用: {torch.cuda.is_available()}")
+            if torch.cuda.is_available():
+                print(f"[SAGEATTENTION] CUDA 版本: {torch.version.cuda}")
+                print(f"[SAGEATTENTION] GPU 设备: {torch.cuda.get_device_name(0)}")
+        except Exception as e:
+            print(f"[SAGEATTENTION] PyTorch 环境检查失败: {e}")
+        print("=" * 60)
+
         # 检查 utils 模块位置
         for p in sys.path[:5]:
             utils_py = os.path.join(p, "utils.py")
@@ -1700,7 +1750,42 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
         parser = WorkflowParser(workflow_path)
         parser.load()
         workflow_data = parser.workflow_data
-        
+
+        # 应用配置文件中的节点参数覆盖（overrides）
+        workflow_config = registered_workflows.get(workflow_name, {})
+        overrides = workflow_config.get("overrides", {})
+        if overrides:
+            print(f"[CONFIG] 应用节点参数覆盖配置...")
+            for node_id, override_config in overrides.items():
+                if node_id in workflow_data:
+                    node_data = workflow_data[node_id]
+
+                    # 覆盖 widgets_values
+                    if "widgets_values" in override_config:
+                        old_values = node_data.get("inputs", {})
+                        node_data["inputs"] = node_data.get("inputs", {})
+
+                        # widgets_values 通常对应节点的输入值列表
+                        # 对于 PathchSageAttentionKJ，第一个值是 sage_attention 模式
+                        widget_values = override_config["widgets_values"]
+                        if len(widget_values) > 0:
+                            # 检测节点类型以确定如何应用覆盖
+                            class_type = node_data.get("class_type", "")
+                            if class_type == "PathchSageAttentionKJ":
+                                # SageAttention 节点：第一个值是 sage_attention 输入
+                                node_data["inputs"]["sage_attention"] = widget_values[0]
+                                print(f"  - Node {node_id} ({class_type}): sage_attention = {widget_values[0]}")
+                            else:
+                                # 通用节点：尝试按顺序覆盖 inputs
+                                input_keys = list(node_data.get("inputs", {}).keys())
+                                for i, value in enumerate(widget_values):
+                                    if i < len(input_keys):
+                                        key = input_keys[i]
+                                        node_data["inputs"][key] = value
+                                        print(f"  - Node {node_id} ({class_type}): {key} = {value}")
+                else:
+                    print(f"  - 警告: 节点 {node_id} 不存在于工作流中，跳过覆盖")
+
         # 应用用户参数到工作流
         print(f"[DEBUG] processed_params keys: {list(processed_params.keys())}")
         print(f"[DEBUG] processed_params: {processed_params}")
@@ -1961,6 +2046,7 @@ def register_workflow_endpoints():
             "input_mapping": input_mapping,      # 原始映射配置
             "output_mapping": output_mapping,    # 输出节点映射
             "raw_params": raw_params,            # 原始参数（供调试）
+            "overrides": wf.get("overrides", {}),  # 节点参数覆盖配置
         }
         
         input_count = len(semantic_inputs)

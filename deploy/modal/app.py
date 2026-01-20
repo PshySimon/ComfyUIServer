@@ -36,7 +36,7 @@ def load_config():
             'cpu': 4,
             'memory': 16384
         },
-        'image': {'base': 'pytorch/pytorch:2.9.1-cuda13.0-cudnn9-runtime'},
+        'image': {'base': 'pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime'},
         'volumes': {
             'models': 'comfyui-models',
             'custom_nodes': 'comfyui-custom-nodes',
@@ -78,6 +78,7 @@ image = (
     )
     .env({
         "HF_HUB_ENABLE_HF_TRANSFER": "1",
+        "REBUILD_TIMESTAMP": "20260120-1215",  # 强制重建镜像以安装 sageattention
     })
     .pip_install(
         "typing-extensions>=4.12.0",  # 确保有 Sentinel
@@ -88,6 +89,7 @@ image = (
         "requests",
         "tqdm",
         "gitpython",
+        "sageattention",  # KJNodes Sage Attention 优化（config.yaml 已启用）
     )
 )
 

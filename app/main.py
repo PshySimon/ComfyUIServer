@@ -1739,6 +1739,8 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
         print(f"  GPU 已分配: {start_gpu_memory:.2f} GB")
         print(f"  GPU 已保留: {start_gpu_reserved:.2f} GB")
     print("=" * 80)
+    import sys
+    sys.stdout.flush()
 
     try:
         task_manager.update_task(task_id, status=TaskStatus.PROCESSING)
@@ -2040,6 +2042,7 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
         if end_cpu_percent > 90:
             print(f"  ⚠️  CPU 使用率高: {end_cpu_percent:.1f}% - 可能存在 CPU 瓶颈")
         print("=" * 80)
+        sys.stdout.flush()
 
         task_manager.update_task(
             task_id,

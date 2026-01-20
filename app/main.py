@@ -1703,6 +1703,43 @@ async def upload_image(file: UploadFile = File(...)):
 def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, params: Dict):
     """在后台线程中执行工作流任务 - 使用 ComfyUI-SaveAsScript 官方方式"""
     progress_tracker = None
+
+    # ============================================================================
+    # 性能监控：记录开始时的系统资源
+    # ============================================================================
+    import psutil
+    import os
+
+    process = psutil.Process(os.getpid())
+    start_time = time.time()
+    start_cpu_percent = process.cpu_percent()
+    start_memory = process.memory_info()
+
+    try:
+        import torch
+        if torch.cuda.is_available():
+            start_gpu_memory = torch.cuda.memory_allocated() / 1024**3  # GB
+            start_gpu_reserved = torch.cuda.memory_reserved() / 1024**3  # GB
+        else:
+            start_gpu_memory = 0
+            start_gpu_reserved = 0
+    except:
+        start_gpu_memory = 0
+        start_gpu_reserved = 0
+
+    print("=" * 80)
+    print(f"[PERF] 工作流执行开始: {workflow_name}")
+    print(f"[PERF] 系统资源快照:")
+    print(f"  CPU 核心数: {psutil.cpu_count()}")
+    print(f"  系统内存: {psutil.virtual_memory().total / 1024**3:.1f} GB")
+    print(f"  进程内存: {start_memory.rss / 1024**3:.2f} GB")
+    if torch.cuda.is_available():
+        print(f"  GPU: {torch.cuda.get_device_name(0)}")
+        print(f"  GPU 显存总量: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+        print(f"  GPU 已分配: {start_gpu_memory:.2f} GB")
+        print(f"  GPU 已保留: {start_gpu_reserved:.2f} GB")
+    print("=" * 80)
+
     try:
         task_manager.update_task(task_id, status=TaskStatus.PROCESSING)
         
@@ -1950,7 +1987,60 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
         
         # 获取最终进度信息
         final_progress = progress_tracker.get_progress() if progress_tracker else {}
-        
+
+        # ============================================================================
+        # 性能监控：记录结束时的系统资源和性能指标
+        # ============================================================================
+        end_time = time.time()
+        total_time = end_time - start_time
+        end_memory = process.memory_info()
+        end_cpu_percent = process.cpu_percent()
+
+        try:
+            if torch.cuda.is_available():
+                end_gpu_memory = torch.cuda.memory_allocated() / 1024**3
+                end_gpu_reserved = torch.cuda.memory_reserved() / 1024**3
+                peak_gpu_memory = torch.cuda.max_memory_allocated() / 1024**3
+            else:
+                end_gpu_memory = 0
+                end_gpu_reserved = 0
+                peak_gpu_memory = 0
+        except:
+            end_gpu_memory = 0
+            end_gpu_reserved = 0
+            peak_gpu_memory = 0
+
+        print("=" * 80)
+        print(f"[PERF] 工作流执行完成: {workflow_name}")
+        print(f"[PERF] 总耗时: {total_time:.1f}s")
+        print(f"[PERF] 资源使用:")
+        print(f"  CPU 使用率: {end_cpu_percent:.1f}%")
+        print(f"  进程内存: {start_memory.rss / 1024**3:.2f} GB -> {end_memory.rss / 1024**3:.2f} GB (增加 {(end_memory.rss - start_memory.rss) / 1024**3:.2f} GB)")
+        print(f"  系统可用内存: {psutil.virtual_memory().available / 1024**3:.1f} GB")
+        if torch.cuda.is_available():
+            print(f"  GPU 已分配: {start_gpu_memory:.2f} GB -> {end_gpu_memory:.2f} GB")
+            print(f"  GPU 峰值分配: {peak_gpu_memory:.2f} GB")
+            print(f"  GPU 已保留: {start_gpu_reserved:.2f} GB -> {end_gpu_reserved:.2f} GB")
+
+        # 性能分析
+        print(f"[PERF] 性能分析:")
+        if total_time > 0:
+            avg_fps = final_progress.get("frames", 81) / total_time if "frames" in final_progress else 0
+            print(f"  平均处理速度: {avg_fps:.2f} frames/s")
+
+        # 瓶颈分析
+        print(f"[PERF] 瓶颈分析:")
+        memory_usage_percent = (end_memory.rss / psutil.virtual_memory().total) * 100
+        if memory_usage_percent > 80:
+            print(f"  ⚠️  内存使用率高: {memory_usage_percent:.1f}% - 可能存在内存瓶颈")
+        if torch.cuda.is_available():
+            gpu_usage_percent = (peak_gpu_memory / (torch.cuda.get_device_properties(0).total_memory / 1024**3)) * 100
+            if gpu_usage_percent > 90:
+                print(f"  ⚠️  GPU 显存使用率高: {gpu_usage_percent:.1f}% - 可能存在显存瓶颈")
+        if end_cpu_percent > 90:
+            print(f"  ⚠️  CPU 使用率高: {end_cpu_percent:.1f}% - 可能存在 CPU 瓶颈")
+        print("=" * 80)
+
         task_manager.update_task(
             task_id,
             status=TaskStatus.COMPLETED,

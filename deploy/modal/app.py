@@ -89,6 +89,7 @@ image = (
         "requests",
         "tqdm",
         "gitpython",
+        "psutil",  # 系统资源监控
         "sageattention",  # KJNodes Sage Attention 优化（config.yaml 已启用）
     )
 )

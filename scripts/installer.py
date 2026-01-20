@@ -48,10 +48,11 @@ class ComfyUIInstaller:
     SAVE_AS_SCRIPT_REPO = "https://github.com/atmaranto/ComfyUI-SaveAsScript.git"
     NODE_MAP_URL = "https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/extension-node-map.json"
     
-    def __init__(self, install_dir: str, workflow_file: Optional[str] = None, skip_deps: bool = False):
+    def __init__(self, install_dir: str, workflow_file: Optional[str] = None, skip_deps: bool = False, no_interactive: bool = False):
         self.install_dir = Path(install_dir).resolve()
         self.workflow_file = Path(workflow_file).resolve() if workflow_file else None
         self.skip_deps = skip_deps
+        self.no_interactive = no_interactive  # 非交互模式：直接打印所有日志
 
         self.comfyui_dir = self.install_dir / "ComfyUI"
         self.custom_nodes_dir = self.comfyui_dir / "custom_nodes"
@@ -101,6 +102,10 @@ class ComfyUIInstaller:
         with open(self.log_file, 'a', encoding='utf-8') as f:
             f.write(f"{plain_message}\n")
 
+        # 非交互模式：直接打印到 stdout
+        if self.no_interactive and not to_file_only:
+            print(plain_message, flush=True)
+
         # Add to display logs unless file-only
         if not to_file_only:
             self.logs.append(message)
@@ -108,7 +113,8 @@ class ComfyUIInstaller:
             if len(self.logs) > 20:
                 self.logs = self.logs[-20:]
             # Use throttled refresh instead of immediate refresh
-            self._throttled_refresh()
+            if not self.no_interactive:  # 交互模式才刷新界面
+                self._throttled_refresh()
     
     def run_command(self, cmd: List[str], cwd: Optional[Path] = None, capture: bool = False) -> subprocess.CompletedProcess:
         """Run a command and log output in real-time"""
@@ -1068,11 +1074,105 @@ class ComfyUIInstaller:
             border_style="green",
             height=5
         ))
-        
+
         return self._layout
-    
+
+    def _run_non_interactive(self):
+        """非交互模式：直接打印所有日志，不使用 Rich Live/Progress"""
+        print(f"ComfyUI Installer")
+        print(f"Install dir: {self.install_dir}\n")
+
+        # Phase 1: Setup steps
+        steps = [
+            ("Install project dependencies", self.install_project_requirements),
+            ("Clone ComfyUI", lambda: self.clone_or_pull(self.COMFYUI_REPO, self.comfyui_dir, "ComfyUI")),
+            ("Setup workflows directory", self.setup_workflows_symlink),
+            ("Install ComfyUI dependencies", self.install_requirements),
+            ("Clone ComfyUI-Manager", lambda: self.clone_or_pull(self.MANAGER_REPO, self.manager_dir, "ComfyUI-Manager")),
+            ("Clone Models-Downloader", lambda: self.clone_or_pull(self.MODELS_DOWNLOADER_REPO, self.models_downloader_dir, "Workflow-Models-Downloader")),
+            ("Clone SaveAsScript", lambda: self.clone_or_pull(self.SAVE_AS_SCRIPT_REPO, self.save_as_script_dir, "SaveAsScript")),
+        ]
+
+        print("=== Phase 1: Setting up ComfyUI ===\n")
+        for i, (step_name, step_func) in enumerate(steps, 1):
+            print(f"[{i}/{len(steps)}] {step_name}...")
+            if not step_func():
+                print(f"Failed: {step_name}")
+                self.show_summary()
+                return False
+            print()
+
+        print("✓ Setup complete\n")
+
+        # Phase 2: Install workflow nodes
+        if self.workflow_file:
+            print("=== Phase 2: Installing custom nodes ===\n")
+            workflow_deps = self.extract_workflow_deps()
+            self.unknown_nodes = workflow_deps.get("unknown_nodes", [])
+
+            # Categorize nodes
+            already_installed = []
+            nodes_to_install = []
+
+            for url, info in workflow_deps.get("custom_nodes", {}).items():
+                state = info.get("state", "")
+                node_name = url.split("/")[-1] if "/" in url else url
+                if state == "installed":
+                    already_installed.append(node_name)
+                else:
+                    nodes_to_install.append(url)
+
+            if already_installed:
+                print(f"✓ Already installed ({len(already_installed)} nodes)")
+                for name in already_installed[:5]:
+                    print(f"  • {name}")
+                if len(already_installed) > 5:
+                    print(f"  ... and {len(already_installed) - 5} more")
+                print()
+
+            if nodes_to_install:
+                print(f"Installing {len(nodes_to_install)} custom nodes...\n")
+                for i, node_url in enumerate(nodes_to_install, 1):
+                    node_name = node_url.split("/")[-1] if "/" in node_url else node_url
+                    print(f"[{i}/{len(nodes_to_install)}] {node_name}...")
+                    self.install_custom_node(node_url)
+                    print()
+                print("✓ Custom nodes installed\n")
+            else:
+                print("All known nodes already installed!\n")
+
+            # Phase 3: Resolve unknown nodes
+            if self.unknown_nodes:
+                print(f"=== Phase 3: Resolving {len(self.unknown_nodes)} unknown nodes ===\n")
+                official_repos, github_candidates, still_unknown = self.resolve_unknown_nodes(self.unknown_nodes)
+
+                if official_repos:
+                    print(f"Installing {len(official_repos)} resolved nodes...\n")
+                    for i, repo_url in enumerate(official_repos, 1):
+                        node_name = repo_url.split("/")[-1] if "/" in repo_url else repo_url
+                        print(f"[{i}/{len(official_repos)}] {node_name}...")
+                        self.install_custom_node(repo_url)
+                        print()
+                    print("✓ Resolved nodes installed\n")
+
+                # Skip GitHub candidates in non-interactive mode
+                if github_candidates:
+                    print(f"Note: {len(github_candidates)} nodes need manual review (skipped in non-interactive mode)")
+
+                if still_unknown:
+                    print(f"Warning: {len(still_unknown)} nodes could not be resolved")
+
+        # Summary
+        self.show_summary()
+        return len(self.failed_nodes) == 0
+
     def run(self):
         """Main installation process"""
+        # 非交互模式：使用简化的输出，不使用 Live/Progress
+        if self.no_interactive:
+            return self._run_non_interactive()
+
+        # 交互模式：使用 Rich 的 Live/Progress 界面
         self.console.clear()
         self.console.print(Panel(
             f"[bold cyan]ComfyUI Installer[/bold cyan]\n  Install dir: {self.install_dir}",
@@ -1619,7 +1719,8 @@ def main():
     installer = ComfyUIInstaller(
         install_dir=str(install_dir),
         workflow_file=workflow_file,
-        skip_deps=args.skip_deps
+        skip_deps=args.skip_deps,
+        no_interactive=args.no_interactive  # 传递非交互模式参数
     )
     
     if args.check:

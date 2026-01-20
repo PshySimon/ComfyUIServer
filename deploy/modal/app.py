@@ -83,6 +83,7 @@ image = (
         "typing-extensions>=4.12.0",  # 确保有 Sentinel
         "pydantic>=2.0.0",  # 使用最新的 pydantic
         "pydantic-core>=2.0.0",  # 确保 pydantic_core 兼容
+        "sageattention",  # KJNodes Sage Attention 加速（可选依赖）
         "pyyaml",
         "rich",
         "requests",

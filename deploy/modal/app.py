@@ -13,41 +13,49 @@ import os
 def load_config():
     """加载配置，本地读取 YAML，服务器端使用环境变量或默认值"""
     config_path = Path(__file__).parent / "config.yaml"
+    env_workflow = os.getenv("INSTALL_WORKFLOW")
 
     # 本地环境：读取 YAML
     if config_path.exists():
         import yaml
         with open(config_path, 'r') as f:
-            return yaml.safe_load(f)
+            cfg = yaml.safe_load(f)
+    else:
+        # 服务器环境：使用默认配置（YAML 的值会在镜像构建时烘焙进来）
+        cfg = {
+            'modal': {
+                'app_name': 'comfyui-server',
+                'timeout': 3600,
+                'min_containers': 1,
+                'scaledown_window': 300,
+                'max_concurrent_inputs': 100
+            },
+            'hardware': {
+                'gpu': 'A10',
+                'gpu_size': '24GB',
+                'gpu_count': 1,
+                'cpu': 4,
+                'memory': 16384
+            },
+            'image': {'base': 'pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime'},
+            'volumes': {
+                'models': 'comfyui-models',
+                'custom_nodes': 'comfyui-custom-nodes',
+                'outputs': 'comfyui-outputs'
+            },
+            'project': {
+                'git_url': 'https://github.com/PshySimon/ComfyUIServer.git',
+                'branch': 'main'
+            },
+            'installation': {'workflow': 'workflows/【Work-FIsh】WAN2.2-RemixV2-I2V图生视频.json'}
+        }
 
-    # 服务器环境：使用默认配置（YAML 的值会在镜像构建时烘焙进来）
-    return {
-        'modal': {
-            'app_name': 'comfyui-server',
-            'timeout': 3600,
-            'min_containers': 1,
-            'scaledown_window': 300,
-            'max_concurrent_inputs': 100
-        },
-        'hardware': {
-            'gpu': 'A10',
-            'gpu_size': '24GB',
-            'gpu_count': 1,
-            'cpu': 4,
-            'memory': 16384
-        },
-        'image': {'base': 'pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime'},
-        'volumes': {
-            'models': 'comfyui-models',
-            'custom_nodes': 'comfyui-custom-nodes',
-            'outputs': 'comfyui-outputs'
-        },
-        'project': {
-            'git_url': 'https://github.com/PshySimon/ComfyUIServer.git',
-            'branch': 'main'
-        },
-        'installation': {'workflow': 'workflows/【Work-FIsh】WAN2.2-RemixV2-I2V图生视频.json'}
-    }
+    # 环境变量优先覆盖安装工作流
+    if env_workflow:
+        cfg.setdefault('installation', {})['workflow'] = env_workflow
+        print(f"[config] INSTALL_WORKFLOW override -> {env_workflow}")
+
+    return cfg
 
 config = load_config()
 

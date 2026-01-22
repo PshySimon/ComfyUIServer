@@ -13,6 +13,7 @@ mkdir -p "$LOG_DIR"
 
 # 日志文件 - 固定文件名
 LOG_FILE="$LOG_DIR/modal.log"
+WORKFLOW_OVERRIDE=""
 
 # 日志函数
 log() {
@@ -25,7 +26,7 @@ usage() {
 Modal 部署管理脚本
 
 用法:
-    $0 deploy            # 部署服务（首次自动安装环境）
+    $0 deploy [--workflow <path>]  # 部署服务（可指定安装用的工作流）
     $0 url               # 显示应用访问 URL
     $0 logs              # 查看服务日志
     $0 logs-follow       # 实时查看服务日志
@@ -74,7 +75,11 @@ deploy() {
     > "$LOG_FILE"
 
     log "🚀 部署服务到 Modal..."
-    log "提示：首次部署会自动安装 ComfyUI 环境（可能需要较长时间）"
+    if [ -n "$WORKFLOW_OVERRIDE" ]; then
+        log "提示：使用自定义工作流安装依赖: $WORKFLOW_OVERRIDE"
+    else
+        log "提示：首次部署会自动安装 ComfyUI 环境（可能需要较长时间）"
+    fi
     log "日志: $LOG_FILE"
 
     cd "$MODAL_DIR"
@@ -83,7 +88,7 @@ deploy() {
     DEPLOY_OUTPUT=$(mktemp)
 
     # macOS 没有 stdbuf，直接使用 tee
-    if modal deploy app.py 2>&1 | tee "$DEPLOY_OUTPUT" | tee -a "$LOG_FILE"; then
+    if INSTALL_WORKFLOW="$WORKFLOW_OVERRIDE" modal deploy app.py 2>&1 | tee "$DEPLOY_OUTPUT" | tee -a "$LOG_FILE"; then
         log "✅ 部署完成"
         log ""
 
@@ -250,6 +255,20 @@ check_modal
 
 case "${1:-}" in
     deploy)
+        shift
+        while [[ $# -gt 0 ]]; do
+            case "$1" in
+                --workflow)
+                    WORKFLOW_OVERRIDE="$2"
+                    shift 2
+                    ;;
+                *)
+                    log "未知参数: $1"
+                    usage
+                    exit 1
+                    ;;
+            esac
+        done
         deploy
         ;;
     url)

@@ -16,9 +16,9 @@ image:
 # Modal 配置
 modal:
   app_name: "comfyui-server"
-  min_containers: 1  # 保持至少1个容器运行
+  min_containers: 0  # 无请求时不保持容器运行（节省成本）
   timeout: 3600  # 超时时间（秒）
-  scaledown_window: 300  # 容器空闲超时（秒，原 container_idle_timeout）
+  scaledown_window: 300  # 容器空闲超时（秒，5分钟内的新请求会命中已预热的容器）
   max_concurrent_inputs: 100  # 最大并发请求数
 
 # 持久化存储卷

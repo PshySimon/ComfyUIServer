@@ -1820,8 +1820,12 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
                                 for i, value in enumerate(widget_values):
                                     if i < len(input_keys):
                                         key = input_keys[i]
-                                        node_data["inputs"][key] = value
-                                        print(f"  - Node {node_id} ({class_type}): {key} = {value}")
+                                        # null 表示保持原值，跳过
+                                        if value is not None:
+                                            node_data["inputs"][key] = value
+                                            print(f"  - Node {node_id} ({class_type}): {key} = {value}")
+                                        else:
+                                            print(f"  - Node {node_id} ({class_type}): {key} = (保持原值)")
                 else:
                     print(f"  - 警告: 节点 {node_id} 不存在于工作流中，跳过覆盖")
 

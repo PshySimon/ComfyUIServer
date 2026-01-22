@@ -139,9 +139,9 @@ workflows:
     # 覆盖 workflow 中的节点配置
     overrides:
       "1":  # 低噪声-Patch Sage Attention KJ
-        widgets_values: ["enabled"]
+        widgets_values: ["auto"]
       "2":  # 高噪声-Patch Sage Attention KJ
-        widgets_values: ["enabled"]
+        widgets_values: ["auto"]
     inputs:
       image: "image_78"             # 输入图片（支持 base64/URL/文件名）
       positive_prompt: "text_72"    # 正向提示词

@@ -137,6 +137,13 @@ workflows:
     path: "workflows/【Work-FIsh】WAN2.2-RemixV2-I2V图生视频.json"
     description: "WAN2.2 RemixV2 图生视频"
     # 覆盖 workflow 中的节点配置
+    # Sage Attention 有效值：
+    #   - "disabled": 禁用 SageAttention
+    #   - "auto": 自动模式（推荐，让 SageAttention 自动选择最优后端）
+    #   - "sageattn_qk_int8_pv_fp16_cuda": INT8量化+FP16，CUDA后端
+    #   - "sageattn_qk_int8_pv_fp16_triton": INT8量化+FP16，Triton后端
+    #   - "sageattn_qk_int8_pv_fp8_cuda": INT8量化+FP8
+    #   - "sageattn3": SageAttention 3.0 (需要 Blackwell GPU)
     overrides:
       "1":  # 低噪声-Patch Sage Attention KJ
         widgets_values: ["auto"]

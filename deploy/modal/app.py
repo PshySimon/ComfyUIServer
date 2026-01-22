@@ -75,10 +75,13 @@ image = (
         "ffmpeg",
         "libsm6",
         "libxext6",
+        "build-essential",  # C/C++ 编译器（SageAttention/Triton 需要）
+        "gcc",
+        "g++",
     )
     .env({
         "HF_HUB_ENABLE_HF_TRANSFER": "1",
-        "REBUILD_TIMESTAMP": "20260120-1215",  # 强制重建镜像以安装 sageattention
+        "REBUILD_TIMESTAMP": "20260122-1147",  # 强制重建镜像：添加 C 编译器支持 SageAttention
     })
     .pip_install(
         "typing-extensions>=4.12.0",  # 确保有 Sentinel

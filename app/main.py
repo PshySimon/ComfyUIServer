@@ -1793,6 +1793,7 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
         # 应用配置文件中的节点参数覆盖（overrides）
         workflow_config = registered_workflows.get(workflow_name, {})
         overrides = workflow_config.get("overrides", {})
+        output_mapping = workflow_config.get("output_mapping", {})
         if overrides:
             print(f"[CONFIG] 应用节点参数覆盖配置...")
             for node_id, override_config in overrides.items():
@@ -1963,11 +1964,51 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
             except:
                 pass
         
+        # 根据配置筛选输出节点（如果配置了 outputs，优先匹配特定节点）
+        target_output_nodes = set()
+        if output_mapping:
+            for output_name, target in output_mapping.items():
+                matched_node_id = None
+
+                # 允许通过节点 ID 或节点类型匹配
+                if isinstance(target, int) or (isinstance(target, str) and target.isdigit()):
+                    node_id_str = str(target)
+                    if node_id_str in workflow_data:
+                        matched_node_id = node_id_str
+                    else:
+                        print(f"[WARN] 输出 {output_name} 指定的节点 ID={target} 不存在，跳过")
+                else:
+                    # 按节点类型匹配，默认使用 ID 最大的一个（通常是最终输出节点）
+                    matched_nodes = [
+                        nid for nid, ndata in workflow_data.items()
+                        if ndata.get("class_type") == target
+                    ]
+                    if matched_nodes:
+                        try:
+                            matched_nodes.sort(key=lambda x: int(x))
+                        except Exception:
+                            matched_nodes.sort()
+                        matched_node_id = matched_nodes[-1]
+                        if len(matched_nodes) > 1:
+                            print(f"[WARN] 输出 {output_name} 匹配到多个 {target} 节点 {matched_nodes}，使用 ID 最大的 {matched_node_id}")
+                    else:
+                        print(f"[WARN] 输出 {output_name} 未找到类型为 {target} 的节点")
+
+                if matched_node_id:
+                    target_output_nodes.add(matched_node_id)
+
+            if target_output_nodes:
+                print(f"[DEBUG] 输出节点筛选: {sorted(target_output_nodes)}")
+
         # 提取输出文件
         output_files = []
         output_results = {}
         
         for node_id, node_data in workflow_data.items():
+            # 如果配置了输出节点筛选，则只处理匹配的节点
+            if target_output_nodes and node_id not in target_output_nodes:
+                continue
+
             class_type = node_data.get("class_type", "")
             if class_type in ("SaveImage", "PreviewImage", "VHS_VideoCombine"):
                 if node_id in results:

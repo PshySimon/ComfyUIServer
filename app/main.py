@@ -1814,6 +1814,18 @@ def execute_workflow_task(task_id: str, workflow_name: str, workflow_path: str, 
                                 # SageAttention 节点：第一个值是 sage_attention 输入
                                 node_data["inputs"]["sage_attention"] = widget_values[0]
                                 print(f"  - Node {node_id} ({class_type}): sage_attention = {widget_values[0]}")
+                            elif class_type == "WanImageToVideo":
+                                # WanImageToVideo 节点：widgets_values 对应 [width, height, length, batch_size]
+                                widget_names = ["width", "height", "length", "batch_size"]
+                                for i, value in enumerate(widget_values):
+                                    if i < len(widget_names):
+                                        key = widget_names[i]
+                                        # null 表示保持原值，跳过
+                                        if value is not None:
+                                            node_data["inputs"][key] = value
+                                            print(f"  - Node {node_id} ({class_type}): {key} = {value}")
+                                        else:
+                                            print(f"  - Node {node_id} ({class_type}): {key} = (保持原值)")
                             else:
                                 # 通用节点：尝试按顺序覆盖 inputs
                                 input_keys = list(node_data.get("inputs", {}).keys())

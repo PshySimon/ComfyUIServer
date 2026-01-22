@@ -150,7 +150,7 @@ workflows:
       "2":  # 高噪声-Patch Sage Attention KJ
         widgets_values: ["auto"]
       "40":  # WanImageToVideo 节点
-        # widgets_values: [width, height, frames, batch_size]
+        # widgets_values: [width, height, length, batch_size]
         # batch_size 控制一次生成多少个视频
         # ⚠️ 警告: batch_size=2 显存需求 ~40GB，batch_size=3+ 会 OOM (L40S 48GB)
         widgets_values: [null, null, null, 2]  # 批量生成 2 个视频

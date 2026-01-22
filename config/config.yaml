@@ -27,7 +27,7 @@ comfyui:
   # - highvram: 将所有模型保留在 GPU 内存中（适合 80GB+ 显存）
   # - normalvram: 标准模式，根据需要加载/卸载模型
   # - lowvram: 低显存模式，仅保留当前使用的模型
-  vram_mode: "highvram"
+  vram_mode: "normalvram"
 
 # 文件目录配置
 storage:

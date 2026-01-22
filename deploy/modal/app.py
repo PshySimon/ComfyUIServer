@@ -123,6 +123,8 @@ def get_gpu_config():
         return f"A100-{gpu_size.upper()}"
     elif gpu_type == "A10":
         return "A10G"
+    elif gpu_type == "L40S":
+        return "L40S"
     else:
         raise ValueError(f"Unsupported GPU type: {gpu_type}")
 
